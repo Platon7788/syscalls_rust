@@ -1,0 +1,26 @@
+[package]
+name = "syscalls"
+version = "0.1.0"
+edition = "2021"
+description = "SysWhispers3 direct syscall library for Windows"
+license = "MIT"
+readme = "README.md"
+
+[lib]
+name = "syscalls"
+path = "lib.rs"
+
+[features]
+default = []
+# Enable debug breakpoints before each syscall
+debug = []
+
+[dependencies]
+# No dependencies - pure no_std
+
+[profile.release]
+opt-level = "z"     # Optimize for size
+lto = true          # Link-time optimization
+codegen-units = 1   # Better optimization
+panic = "abort"     # No unwinding
+strip = true        # Strip symbols
