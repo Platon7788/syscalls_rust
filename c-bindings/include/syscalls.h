@@ -43,8 +43,12 @@
     #error "Unsupported architecture - only x86 and x64 are supported"
 #endif
 
-/* WOW64 detection (x86 process on x64 system) */
-#if SYSCALLS_X86 && (defined(_WIN64) || defined(__LP64__))
+/* WOW64 detection - compile-time flag only.
+ * WOW64 (x86 process on x64 OS) CANNOT be detected at compile time,
+ * because _WIN64 is never defined in x86 compilation.
+ * Define SYSCALLS_FORCE_WOW64 manually if building for WOW64 target.
+ * For runtime detection use IsWow64Process() or NtQueryInformationProcess(). */
+#ifdef SYSCALLS_FORCE_WOW64
     #define SYSCALLS_WOW64 1
 #else
     #define SYSCALLS_WOW64 0
@@ -474,12 +478,6 @@ typedef void* SW3_PPORT_SECTION_READ;
 #define PPORT_SECTION_READ SW3_PPORT_SECTION_READ
 #endif
 #endif
-typedef void* SW3_PRTL_ATOM;
-#if !SYSCALLS_WINDOWS_SDK_DETECTED
-#ifndef PRTL_ATOM
-#define PRTL_ATOM SW3_PRTL_ATOM
-#endif
-#endif
 typedef void* SW3_PALPC_CONTEXT_ATTR;
 #if !SYSCALLS_WINDOWS_SDK_DETECTED
 #ifndef PALPC_CONTEXT_ATTR
@@ -496,12 +494,6 @@ typedef void* SW3_PALPC_SECURITY_ATTR;
 #if !SYSCALLS_WINDOWS_SDK_DETECTED
 #ifndef PALPC_SECURITY_ATTR
 #define PALPC_SECURITY_ATTR SW3_PALPC_SECURITY_ATTR
-#endif
-#endif
-typedef void* SW3_RTL_ATOM;
-#if !SYSCALLS_WINDOWS_SDK_DETECTED
-#ifndef RTL_ATOM
-#define RTL_ATOM SW3_RTL_ATOM
 #endif
 #endif
 typedef void* SW3_PTOKEN_USER;
@@ -577,31 +569,25 @@ typedef void* SW3_PFILE_IO_COMPLETION_INFORMATION;
 #endif
 #endif
 
+/* RTL_ATOM is a 16-bit value, not a pointer */
+typedef uint16_t SW3_RTL_ATOM;
+typedef uint16_t* SW3_PRTL_ATOM;
+#if !SYSCALLS_WINDOWS_SDK_DETECTED
+#ifndef RTL_ATOM
+#define RTL_ATOM SW3_RTL_ATOM
+#endif
+#ifndef PRTL_ATOM
+#define PRTL_ATOM SW3_PRTL_ATOM
+#endif
+#endif
+
 
 /* ==================== Structures ==================== */
 
 /* SysWhispers3 structure definitions - always available with SW3_ prefix */
 /* Using SW3_ prefix to avoid conflicts with Windows SDK */
 
-/* Missing SW3 pointer types - always available */
-typedef void* SW3_PFILE_GET_EA_INFORMATION;
-#if !SYSCALLS_WINDOWS_SDK_DETECTED
-#ifndef PFILE_GET_EA_INFORMATION
-#define PFILE_GET_EA_INFORMATION SW3_PFILE_GET_EA_INFORMATION
-#endif
-#endif
-typedef void* SW3_PFILE_USER_QUOTA_INFORMATION;
-#if !SYSCALLS_WINDOWS_SDK_DETECTED
-#ifndef PFILE_USER_QUOTA_INFORMATION
-#define PFILE_USER_QUOTA_INFORMATION SW3_PFILE_USER_QUOTA_INFORMATION
-#endif
-#endif
-typedef void* SW3_PFILE_QUOTA_LIST_INFORMATION;
-#if !SYSCALLS_WINDOWS_SDK_DETECTED
-#ifndef PFILE_QUOTA_LIST_INFORMATION
-#define PFILE_QUOTA_LIST_INFORMATION SW3_PFILE_QUOTA_LIST_INFORMATION
-#endif
-#endif
+/* Additional SW3 pointer types - always available */
 typedef void* SW3_PSID;
 #if !SYSCALLS_WINDOWS_SDK_DETECTED
 #ifndef PSID

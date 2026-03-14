@@ -1,0 +1,45 @@
+# Rust build artifacts
+target/
+target_smol/
+
+# Cargo lock for libraries
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Debug symbols
+*.pdb
+
+# Compiled binaries and objects
+*.exe
+*.dll
+*.lib
+*.a
+*.obj
+
+# AI assistant local config
+.claude/
+c-bindings/.claude/
+
+# Build logs
+*.log
+build_log*.txt
+compile_log.txt
+build_output.txt
+extended_log.txt
+disasm_syscalls.txt
+
+# Backup files
+*.bak
+*.wow64
+
+# Temp files
+nul
+output-wow64/
+
+# Python scripts (one-off tools)
+add_wow64.py

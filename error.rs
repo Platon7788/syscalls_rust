@@ -15,55 +15,55 @@ impl NtStatus {
     pub const fn from_raw(status: i32) -> Self {
         Self(status)
     }
-    
+
     /// Get raw NTSTATUS value
     #[inline]
     pub const fn raw(self) -> i32 {
         self.0
     }
-    
+
     /// Get as unsigned for comparison with hex constants
     #[inline]
     pub const fn as_u32(self) -> u32 {
         self.0 as u32
     }
-    
+
     /// Check if status indicates success (NT_SUCCESS macro)
     #[inline]
     pub const fn is_success(self) -> bool {
         self.0 >= 0
     }
-    
+
     /// Check if status indicates information (severity = 1)
     #[inline]
     pub const fn is_information(self) -> bool {
         (self.as_u32() >> 30) == 1
     }
-    
+
     /// Check if status indicates warning (severity = 2)
     #[inline]
     pub const fn is_warning(self) -> bool {
         (self.as_u32() >> 30) == 2
     }
-    
+
     /// Check if status indicates error (severity = 3)
     #[inline]
     pub const fn is_error(self) -> bool {
         (self.as_u32() >> 30) == 3
     }
-    
+
     /// Get facility code
     #[inline]
     pub const fn facility(self) -> u16 {
         ((self.as_u32() >> 16) & 0x0FFF) as u16
     }
-    
+
     /// Get status code
     #[inline]
     pub const fn code(self) -> u16 {
         (self.as_u32() & 0xFFFF) as u16
     }
-    
+
     /// Get human-readable name if known
     pub const fn name(self) -> &'static str {
         match self.as_u32() {
@@ -86,7 +86,7 @@ impl NtStatus {
             0x0000010A => "STATUS_NOTIFY_CLEANUP",
             0x0000010B => "STATUS_NOTIFY_ENUM_DIR",
             0x0000010C => "STATUS_NO_QUOTAS_FOR_ACCOUNT",
-            
+
             // Information codes (0x40xxxxxx)
             0x40000000 => "STATUS_OBJECT_NAME_EXISTS",
             0x40000001 => "STATUS_THREAD_WAS_SUSPENDED",
@@ -99,7 +99,7 @@ impl NtStatus {
             0x40000017 => "STATUS_RECEIVE_PARTIAL_EXPEDITED",
             0x40000018 => "STATUS_EVENT_DONE",
             0x40000019 => "STATUS_EVENT_PENDING",
-            
+
             // Warning codes (0x80xxxxxx)
             0x80000001 => "STATUS_GUARD_PAGE_VIOLATION",
             0x80000002 => "STATUS_DATATYPE_MISALIGNMENT",
@@ -112,7 +112,7 @@ impl NtStatus {
             0x8000000D => "STATUS_PARTIAL_COPY",
             0x8000001A => "STATUS_NO_MORE_ENTRIES",
             0x80000288 => "STATUS_DEVICE_BUSY",
-            
+
             // Error codes (0xC0xxxxxx)
             0xC0000001 => "STATUS_UNSUCCESSFUL",
             0xC0000002 => "STATUS_NOT_IMPLEMENTED",
@@ -259,7 +259,7 @@ impl NtStatus {
             0xC0000225 => "STATUS_NOT_FOUND",
             0xC000022D => "STATUS_RETRY",
             0xC0000263 => "STATUS_USER_MAPPED_FILE",
-            
+
             _ => "STATUS_UNKNOWN",
         }
     }
@@ -298,7 +298,7 @@ pub type NtResult<T> = Result<T, NtStatus>;
 pub trait NtStatusExt {
     /// Convert to Result, treating negative values as errors
     fn to_result(self) -> NtResult<()>;
-    
+
     /// Convert to Result with a success value
     fn to_result_with<T>(self, value: T) -> NtResult<T>;
 }
@@ -313,7 +313,7 @@ impl NtStatusExt for i32 {
             Err(status)
         }
     }
-    
+
     #[inline]
     fn to_result_with<T>(self, value: T) -> NtResult<T> {
         let status = NtStatus(self);
@@ -353,7 +353,7 @@ pub const STATUS_NOT_FOUND: NtStatus = NtStatus(0xC0000225u32 as i32);
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_status_success() {
         let status = NtStatus::from_raw(0);
@@ -361,7 +361,7 @@ mod tests {
         assert!(!status.is_error());
         assert_eq!(status.name(), "STATUS_SUCCESS");
     }
-    
+
     #[test]
     fn test_status_error() {
         let status = NtStatus::from_raw(0xC0000005u32 as i32);
@@ -369,7 +369,7 @@ mod tests {
         assert!(status.is_error());
         assert_eq!(status.name(), "STATUS_ACCESS_VIOLATION");
     }
-    
+
     #[test]
     fn test_to_result() {
         assert!(0i32.to_result().is_ok());

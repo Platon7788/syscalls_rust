@@ -1,0 +1,14 @@
+# Use static CRT linkage for all Windows targets
+# This eliminates runtime dependencies on VCRUNTIME140.dll, ucrtbase.dll, msvcrt.dll, etc.
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.i686-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.x86_64-pc-windows-gnu]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.i686-pc-windows-gnu]
+rustflags = ["-C", "target-feature=+crt-static"]

@@ -6,7 +6,7 @@
 //!   Seed: 0xB8A54425
 //!   Architecture: all
 //!   Recovery: JUMPER_RANDOMIZED
-//!   WoW64: False
+//!   WoW64: True
 //!
 //! Usage:
 //! ```rust,ignore
@@ -973,7 +973,16 @@ unsafe fn sw3_get_wow64_gate() -> PVOID {
 
 /// Find syscall/sysenter instruction address in ntdll
 /// Used for jumper modes to bypass hooks
+/// On WoW64, sysenter/ret pattern doesn't exist in ntdll - return null
+/// (WoW64 uses the Wow32Reserved gate instead)
 unsafe fn sw3_find_syscall_address(nt_api_address: PVOID) -> PVOID {
+    // On WoW64, ntdll uses 'call Wow64SystemServiceCall' instead of sysenter;ret
+    // Searching for sysenter pattern would read out of bounds and crash
+    #[cfg(target_arch = "x86")]
+    if sw3_is_wow64() {
+        return core::ptr::null_mut();
+    }
+
     const SEARCH_LIMIT: usize = 512;
 
     #[cfg(target_arch = "x86_64")]
@@ -1323,23 +1332,41 @@ pub unsafe fn nt_accept_connect_port(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -1433,7 +1460,10 @@ pub unsafe fn nt_access_check(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 28]",
         "push dword ptr [{params_ptr} + 24]",
         "push dword ptr [{params_ptr} + 20]",
@@ -1442,16 +1472,33 @@ pub unsafe fn nt_access_check(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 32",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 36",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 32",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -1554,7 +1601,10 @@ pub unsafe fn nt_access_check_and_audit_alarm(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 40]",
         "push dword ptr [{params_ptr} + 36]",
         "push dword ptr [{params_ptr} + 32]",
@@ -1566,16 +1616,36 @@ pub unsafe fn nt_access_check_and_audit_alarm(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 44",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 48",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 40]",
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 44",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -1678,7 +1748,10 @@ pub unsafe fn nt_access_check_by_type(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 40]",
         "push dword ptr [{params_ptr} + 36]",
         "push dword ptr [{params_ptr} + 32]",
@@ -1690,16 +1763,36 @@ pub unsafe fn nt_access_check_by_type(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 44",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 48",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 40]",
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 44",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -1817,7 +1910,10 @@ pub unsafe fn nt_access_check_by_type_and_audit_alarm(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 60]",
         "push dword ptr [{params_ptr} + 56]",
         "push dword ptr [{params_ptr} + 52]",
@@ -1834,16 +1930,41 @@ pub unsafe fn nt_access_check_by_type_and_audit_alarm(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 64",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 68",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 60]",
+        "push dword ptr [{params_ptr} + 56]",
+        "push dword ptr [{params_ptr} + 52]",
+        "push dword ptr [{params_ptr} + 48]",
+        "push dword ptr [{params_ptr} + 44]",
+        "push dword ptr [{params_ptr} + 40]",
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 64",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -1946,7 +2067,10 @@ pub unsafe fn nt_access_check_by_type_result_list(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 40]",
         "push dword ptr [{params_ptr} + 36]",
         "push dword ptr [{params_ptr} + 32]",
@@ -1958,16 +2082,36 @@ pub unsafe fn nt_access_check_by_type_result_list(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 44",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 48",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 40]",
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 44",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -2085,7 +2229,10 @@ pub unsafe fn nt_access_check_by_type_result_list_and_audit_alarm(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 60]",
         "push dword ptr [{params_ptr} + 56]",
         "push dword ptr [{params_ptr} + 52]",
@@ -2102,16 +2249,41 @@ pub unsafe fn nt_access_check_by_type_result_list_and_audit_alarm(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 64",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 68",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 60]",
+        "push dword ptr [{params_ptr} + 56]",
+        "push dword ptr [{params_ptr} + 52]",
+        "push dword ptr [{params_ptr} + 48]",
+        "push dword ptr [{params_ptr} + 44]",
+        "push dword ptr [{params_ptr} + 40]",
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 64",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -2232,7 +2404,10 @@ pub unsafe fn nt_access_check_by_type_result_list_and_audit_alarm_by_handle(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 64]",
         "push dword ptr [{params_ptr} + 60]",
         "push dword ptr [{params_ptr} + 56]",
@@ -2250,16 +2425,42 @@ pub unsafe fn nt_access_check_by_type_result_list_and_audit_alarm_by_handle(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 68",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 72",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 64]",
+        "push dword ptr [{params_ptr} + 60]",
+        "push dword ptr [{params_ptr} + 56]",
+        "push dword ptr [{params_ptr} + 52]",
+        "push dword ptr [{params_ptr} + 48]",
+        "push dword ptr [{params_ptr} + 44]",
+        "push dword ptr [{params_ptr} + 40]",
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 68",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -2331,27 +2532,41 @@ pub unsafe fn nt_acquire_cmf_view_ownership(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xB2ED8A64_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xB2ED8A64_u32);
-    let params: [u32; 3] = [
-        time_stamp as u32,
-        token_taken as u32,
-        replace_existing as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) time_stamp as u32,
+        p1 = in(reg) token_taken as u32,
+        p2 = in(reg) replace_existing as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) time_stamp as u32,
+        p1 = in(reg) token_taken as u32,
+        p2 = in(reg) replace_existing as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -2425,29 +2640,45 @@ pub unsafe fn nt_acquire_cross_vm_mutant(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x2E8C0916_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x2E8C0916_u32);
-    let params: [u32; 4] = [
-        mutant_handle as u32,
-        desired_access as u32,
-        alertable as u32,
-        timeout as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) mutant_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) alertable as u32,
+        p3 = in(reg) timeout as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) mutant_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) alertable as u32,
+        p3 = in(reg) timeout as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -2513,18 +2744,26 @@ pub unsafe fn nt_acquire_process_activity_reference() -> NTSTATUS {
     let syscall_addr = sw3_get_random_syscall_address(0xAF1B6B3B_u32);
     let status: i32;
 
-    core::arch::asm!(
-
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 0",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 4",
+            gate = in(reg) wow64_gate as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+            "mov edx, esp",
+            "call {addr}",
+            addr = in(reg) syscall_addr as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -2592,23 +2831,41 @@ pub unsafe extern "C" fn nt_add_atom(
 pub unsafe fn nt_add_atom(atom_name: PWSTR, length: ULONG, atom: *mut USHORT) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x9CC88142_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x9CC88142_u32);
-    let params: [u32; 3] = [atom_name as u32, length as u32, atom as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) atom_name as u32,
+        p1 = in(reg) length as u32,
+        p2 = in(reg) atom as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) atom_name as u32,
+        p1 = in(reg) length as u32,
+        p2 = in(reg) atom as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -2682,24 +2939,45 @@ pub unsafe fn nt_add_atom_ex(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x1D8A2936_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x1D8A2936_u32);
-    let params: [u32; 4] = [atom_name as u32, length as u32, atom as u32, flags as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) atom_name as u32,
+        p1 = in(reg) length as u32,
+        p2 = in(reg) atom as u32,
+        p3 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) atom_name as u32,
+        p1 = in(reg) length as u32,
+        p2 = in(reg) atom as u32,
+        p3 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -2763,22 +3041,37 @@ pub unsafe extern "C" fn nt_add_boot_entry(boot_entry: PVOID, id: *mut ULONG) ->
 pub unsafe fn nt_add_boot_entry(boot_entry: PVOID, id: *mut ULONG) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x0F93391C_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x0F93391C_u32);
-    let params: [u32; 2] = [boot_entry as u32, id as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) boot_entry as u32,
+        p1 = in(reg) id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) boot_entry as u32,
+        p1 = in(reg) id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -2842,22 +3135,37 @@ pub unsafe extern "C" fn nt_add_driver_entry(driver_entry: PVOID, id: *mut ULONG
 pub unsafe fn nt_add_driver_entry(driver_entry: PVOID, id: *mut ULONG) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x011A6FCC_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x011A6FCC_u32);
-    let params: [u32; 2] = [driver_entry as u32, id as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) driver_entry as u32,
+        p1 = in(reg) id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) driver_entry as u32,
+        p1 = in(reg) id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -2945,23 +3253,41 @@ pub unsafe fn nt_adjust_groups_token(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -3049,23 +3375,41 @@ pub unsafe fn nt_adjust_privileges_token(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -3183,7 +3527,10 @@ pub unsafe fn nt_adjust_token_claims_and_device_groups(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 60]",
         "push dword ptr [{params_ptr} + 56]",
         "push dword ptr [{params_ptr} + 52]",
@@ -3200,16 +3547,41 @@ pub unsafe fn nt_adjust_token_claims_and_device_groups(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 64",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 68",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 60]",
+        "push dword ptr [{params_ptr} + 56]",
+        "push dword ptr [{params_ptr} + 52]",
+        "push dword ptr [{params_ptr} + 48]",
+        "push dword ptr [{params_ptr} + 44]",
+        "push dword ptr [{params_ptr} + 40]",
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 64",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -3279,22 +3651,37 @@ pub unsafe fn nt_alert_multiple_thread_by_thread_id(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xB926E381_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xB926E381_u32);
-    let params: [u32; 2] = [thread_ids as u32, thread_id_count as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) thread_ids as u32,
+        p1 = in(reg) thread_id_count as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) thread_ids as u32,
+        p1 = in(reg) thread_id_count as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -3364,22 +3751,37 @@ pub unsafe fn nt_alert_resume_thread(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xE4CCFE6A_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xE4CCFE6A_u32);
-    let params: [u32; 2] = [thread_handle as u32, previous_suspend_count as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) thread_handle as u32,
+        p1 = in(reg) previous_suspend_count as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) thread_handle as u32,
+        p1 = in(reg) previous_suspend_count as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -3443,21 +3845,33 @@ pub unsafe extern "C" fn nt_alert_thread(thread_handle: HANDLE) -> NTSTATUS {
 pub unsafe fn nt_alert_thread(thread_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x08A0521D_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x08A0521D_u32);
-    let params: [u32; 1] = [thread_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) thread_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) thread_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -3521,21 +3935,33 @@ pub unsafe extern "C" fn nt_alert_thread_by_thread_id(thread_id: ULONG) -> NTSTA
 pub unsafe fn nt_alert_thread_by_thread_id(thread_id: ULONG) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x093431A0_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x093431A0_u32);
-    let params: [u32; 1] = [thread_id as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) thread_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) thread_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -3602,22 +4028,37 @@ pub unsafe extern "C" fn nt_alert_thread_by_thread_id_ex(
 pub unsafe fn nt_alert_thread_by_thread_id_ex(thread_id: HANDLE, flags: ULONG) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x48946C28_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x48946C28_u32);
-    let params: [u32; 2] = [thread_id as u32, flags as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) thread_id as u32,
+        p1 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) thread_id as u32,
+        p1 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -3681,21 +4122,33 @@ pub unsafe extern "C" fn nt_allocate_locally_unique_id(luid: PLUID) -> NTSTATUS 
 pub unsafe fn nt_allocate_locally_unique_id(luid: PLUID) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x76481AC0_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x76481AC0_u32);
-    let params: [u32; 1] = [luid as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) luid as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) luid as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -3767,27 +4220,41 @@ pub unsafe fn nt_allocate_reserve_object(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x1AB47849_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x1AB47849_u32);
-    let params: [u32; 3] = [
-        memory_reserve_handle as u32,
-        object_attributes as u32,
-        type_ as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) memory_reserve_handle as u32,
+        p1 = in(reg) object_attributes as u32,
+        p2 = in(reg) type_ as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) memory_reserve_handle as u32,
+        p1 = in(reg) object_attributes as u32,
+        p2 = in(reg) type_ as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -3859,27 +4326,41 @@ pub unsafe fn nt_allocate_user_physical_pages(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x35B75E2C_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x35B75E2C_u32);
-    let params: [u32; 3] = [
-        process_handle as u32,
-        number_of_pages as u32,
-        user_pfn_array as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) number_of_pages as u32,
+        p2 = in(reg) user_pfn_array as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) number_of_pages as u32,
+        p2 = in(reg) user_pfn_array as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -3964,22 +4445,39 @@ pub unsafe fn nt_allocate_user_physical_pages_ex(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -4053,24 +4551,45 @@ pub unsafe fn nt_allocate_uuids(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x31AB3B37_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x31AB3B37_u32);
-    let params: [u32; 4] = [time as u32, range as u32, sequence as u32, seed as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) time as u32,
+        p1 = in(reg) range as u32,
+        p2 = in(reg) sequence as u32,
+        p3 = in(reg) seed as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) time as u32,
+        p1 = in(reg) range as u32,
+        p2 = in(reg) sequence as u32,
+        p3 = in(reg) seed as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -4158,23 +4677,41 @@ pub unsafe fn nt_allocate_virtual_memory(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -4265,7 +4802,10 @@ pub unsafe fn nt_allocate_virtual_memory_ex(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 24]",
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
@@ -4273,16 +4813,32 @@ pub unsafe fn nt_allocate_virtual_memory_ex(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 28",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 32",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 28",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -4379,7 +4935,10 @@ pub unsafe fn nt_alpc_accept_connect_port(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 32]",
         "push dword ptr [{params_ptr} + 28]",
         "push dword ptr [{params_ptr} + 24]",
@@ -4389,16 +4948,34 @@ pub unsafe fn nt_alpc_accept_connect_port(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 36",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 40",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 36",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -4470,23 +5047,41 @@ pub unsafe fn nt_alpc_cancel_message(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xB5127CBC_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xB5127CBC_u32);
-    let params: [u32; 3] = [port_handle as u32, flags as u32, message_context as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) flags as u32,
+        p2 = in(reg) message_context as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) flags as u32,
+        p2 = in(reg) message_context as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -4589,7 +5184,10 @@ pub unsafe fn nt_alpc_connect_port(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 40]",
         "push dword ptr [{params_ptr} + 36]",
         "push dword ptr [{params_ptr} + 32]",
@@ -4601,16 +5199,36 @@ pub unsafe fn nt_alpc_connect_port(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 44",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 48",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 40]",
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 44",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -4713,7 +5331,10 @@ pub unsafe fn nt_alpc_connect_port_ex(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 40]",
         "push dword ptr [{params_ptr} + 36]",
         "push dword ptr [{params_ptr} + 32]",
@@ -4725,16 +5346,36 @@ pub unsafe fn nt_alpc_connect_port_ex(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 44",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 48",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 40]",
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 44",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -4806,27 +5447,41 @@ pub unsafe fn nt_alpc_create_port(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x9CF57BA6_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x9CF57BA6_u32);
-    let params: [u32; 3] = [
-        port_handle as u32,
-        object_attributes as u32,
-        port_attributes as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) object_attributes as u32,
+        p2 = in(reg) port_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) object_attributes as u32,
+        p2 = in(reg) port_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -4914,23 +5569,41 @@ pub unsafe fn nt_alpc_create_port_section(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -5004,29 +5677,45 @@ pub unsafe fn nt_alpc_create_resource_reserve(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x34A4D0A7_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x34A4D0A7_u32);
-    let params: [u32; 4] = [
-        port_handle as u32,
-        flags as u32,
-        message_size as u32,
-        resource_id as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) flags as u32,
+        p2 = in(reg) message_size as u32,
+        p3 = in(reg) resource_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) flags as u32,
+        p2 = in(reg) message_size as u32,
+        p3 = in(reg) resource_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -5098,23 +5787,41 @@ pub unsafe fn nt_alpc_create_section_view(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x2EB85F43_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x2EB85F43_u32);
-    let params: [u32; 3] = [port_handle as u32, flags as u32, view_attributes as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) flags as u32,
+        p2 = in(reg) view_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) flags as u32,
+        p2 = in(reg) view_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -5186,23 +5893,41 @@ pub unsafe fn nt_alpc_create_security_context(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xF62FEBBE_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xF62FEBBE_u32);
-    let params: [u32; 3] = [port_handle as u32, flags as u32, security_attribute as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) flags as u32,
+        p2 = in(reg) security_attribute as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) flags as u32,
+        p2 = in(reg) security_attribute as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -5274,23 +5999,41 @@ pub unsafe fn nt_alpc_delete_port_section(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xD740F7D2_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xD740F7D2_u32);
-    let params: [u32; 3] = [port_handle as u32, flags as u32, section_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) flags as u32,
+        p2 = in(reg) section_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) flags as u32,
+        p2 = in(reg) section_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -5362,23 +6105,41 @@ pub unsafe fn nt_alpc_delete_resource_reserve(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xFD7CDE32_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xFD7CDE32_u32);
-    let params: [u32; 3] = [port_handle as u32, flags as u32, resource_id as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) flags as u32,
+        p2 = in(reg) resource_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) flags as u32,
+        p2 = in(reg) resource_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -5450,23 +6211,41 @@ pub unsafe fn nt_alpc_delete_section_view(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x152B30B5_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x152B30B5_u32);
-    let params: [u32; 3] = [port_handle as u32, flags as u32, view_base as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) flags as u32,
+        p2 = in(reg) view_base as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) flags as u32,
+        p2 = in(reg) view_base as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -5538,23 +6317,41 @@ pub unsafe fn nt_alpc_delete_security_context(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x9EC1BD6F_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x9EC1BD6F_u32);
-    let params: [u32; 3] = [port_handle as u32, flags as u32, context_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) flags as u32,
+        p2 = in(reg) context_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) flags as u32,
+        p2 = in(reg) context_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -5618,22 +6415,37 @@ pub unsafe extern "C" fn nt_alpc_disconnect_port(port_handle: HANDLE, flags: ULO
 pub unsafe fn nt_alpc_disconnect_port(port_handle: HANDLE, flags: ULONG) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x64B37F1C_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x64B37F1C_u32);
-    let params: [u32; 2] = [port_handle as u32, flags as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -5705,23 +6517,41 @@ pub unsafe fn nt_alpc_impersonate_client_container_of_port(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x66FE432C_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x66FE432C_u32);
-    let params: [u32; 3] = [port_handle as u32, message as u32, flags as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) message as u32,
+        p2 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) message as u32,
+        p2 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -5793,23 +6623,41 @@ pub unsafe fn nt_alpc_impersonate_client_of_port(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x3CAD07E2_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x3CAD07E2_u32);
-    let params: [u32; 3] = [port_handle as u32, message as u32, flags as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) message as u32,
+        p2 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) message as u32,
+        p2 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -5897,23 +6745,41 @@ pub unsafe fn nt_alpc_open_sender_process(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -6001,23 +6867,41 @@ pub unsafe fn nt_alpc_open_sender_thread(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -6102,22 +6986,39 @@ pub unsafe fn nt_alpc_query_information(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -6205,23 +7106,41 @@ pub unsafe fn nt_alpc_query_information_message(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -6293,23 +7212,41 @@ pub unsafe fn nt_alpc_revoke_security_context(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x10940B14_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x10940B14_u32);
-    let params: [u32; 3] = [port_handle as u32, flags as u32, context_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) flags as u32,
+        p2 = in(reg) context_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) flags as u32,
+        p2 = in(reg) context_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -6403,7 +7340,10 @@ pub unsafe fn nt_alpc_send_wait_receive_port(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 28]",
         "push dword ptr [{params_ptr} + 24]",
         "push dword ptr [{params_ptr} + 20]",
@@ -6412,16 +7352,33 @@ pub unsafe fn nt_alpc_send_wait_receive_port(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 32",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 36",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 32",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -6495,29 +7452,45 @@ pub unsafe fn nt_alpc_set_information(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x149D2CD7_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x149D2CD7_u32);
-    let params: [u32; 4] = [
-        port_handle as u32,
-        port_information_class as u32,
-        port_information as u32,
-        length as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) port_information_class as u32,
+        p2 = in(reg) port_information as u32,
+        p3 = in(reg) length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) port_information_class as u32,
+        p2 = in(reg) port_information as u32,
+        p3 = in(reg) length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -6581,22 +7554,37 @@ pub unsafe extern "C" fn nt_apphelp_cache_control(service: u32, service_data: PV
 pub unsafe fn nt_apphelp_cache_control(service: u32, service_data: PVOID) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xCD9DA75B_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xCD9DA75B_u32);
-    let params: [u32; 2] = [service as u32, service_data as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) service as u32,
+        p1 = in(reg) service_data as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) service as u32,
+        p1 = in(reg) service_data as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -6666,22 +7654,37 @@ pub unsafe fn nt_are_mapped_files_the_same(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x15B00E06_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x15B00E06_u32);
-    let params: [u32; 2] = [file1_mapped_as_an_image as u32, file2_mapped_as_file as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) file1_mapped_as_an_image as u32,
+        p1 = in(reg) file2_mapped_as_file as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) file1_mapped_as_an_image as u32,
+        p1 = in(reg) file2_mapped_as_file as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -6751,22 +7754,37 @@ pub unsafe fn nt_assign_process_to_job_object(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xC6922582_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xC6922582_u32);
-    let params: [u32; 2] = [job_handle as u32, process_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) job_handle as u32,
+        p1 = in(reg) process_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) job_handle as u32,
+        p1 = in(reg) process_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -6836,22 +7854,37 @@ pub unsafe fn nt_assign_process_to_silo_object(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x1826E459_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x1826E459_u32);
-    let params: [u32; 2] = [process_handle as u32, silo_object_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) silo_object_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) silo_object_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -6945,7 +7978,10 @@ pub unsafe fn nt_associate_wait_completion_packet(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 28]",
         "push dword ptr [{params_ptr} + 24]",
         "push dword ptr [{params_ptr} + 20]",
@@ -6954,16 +7990,33 @@ pub unsafe fn nt_associate_wait_completion_packet(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 32",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 36",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 32",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -7037,31 +8090,45 @@ pub unsafe fn nt_call_enclave(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x385D10D0_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x385D10D0_u32);
-    let params: [u32; 4] = unsafe {
-        [
-            core::mem::transmute::<_, u32>(routine),
-            parameter as u32,
-            wait_for_thread as u32,
-            return_value as u32,
-        ]
-    };
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) core::mem::transmute::<_, u32>(routine),
+        p1 = in(reg) parameter as u32,
+        p2 = in(reg) wait_for_thread as u32,
+        p3 = in(reg) return_value as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) core::mem::transmute::<_, u32>(routine),
+        p1 = in(reg) parameter as u32,
+        p2 = in(reg) wait_for_thread as u32,
+        p3 = in(reg) return_value as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -7133,27 +8200,41 @@ pub unsafe fn nt_callback_return(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x0E9C5332_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x0E9C5332_u32);
-    let params: [u32; 3] = [
-        output_buffer as u32,
-        output_length as u32,
-        status_param as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) output_buffer as u32,
+        p1 = in(reg) output_length as u32,
+        p2 = in(reg) status_param as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) output_buffer as u32,
+        p1 = in(reg) output_length as u32,
+        p2 = in(reg) status_param as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -7217,21 +8298,33 @@ pub unsafe extern "C" fn nt_cancel_device_wakeup_request(device_handle: HANDLE) 
 pub unsafe fn nt_cancel_device_wakeup_request(device_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xCD08E3D2_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xCD08E3D2_u32);
-    let params: [u32; 1] = [device_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) device_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) device_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -7301,22 +8394,37 @@ pub unsafe fn nt_cancel_io_file(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xE3B9D16C_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xE3B9D16C_u32);
-    let params: [u32; 2] = [file_handle as u32, io_status_block as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) file_handle as u32,
+        p1 = in(reg) io_status_block as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) file_handle as u32,
+        p1 = in(reg) io_status_block as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -7388,27 +8496,41 @@ pub unsafe fn nt_cancel_io_file_ex(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x3AD2FBA8_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x3AD2FBA8_u32);
-    let params: [u32; 3] = [
-        file_handle as u32,
-        io_request_to_cancel as u32,
-        io_status_block as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) file_handle as u32,
+        p1 = in(reg) io_request_to_cancel as u32,
+        p2 = in(reg) io_status_block as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) file_handle as u32,
+        p1 = in(reg) io_request_to_cancel as u32,
+        p2 = in(reg) io_status_block as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -7480,27 +8602,41 @@ pub unsafe fn nt_cancel_synchronous_io_file(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x78A04C72_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x78A04C72_u32);
-    let params: [u32; 3] = [
-        thread_handle as u32,
-        io_request_to_cancel as u32,
-        io_status_block as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) thread_handle as u32,
+        p1 = in(reg) io_request_to_cancel as u32,
+        p2 = in(reg) io_status_block as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) thread_handle as u32,
+        p1 = in(reg) io_request_to_cancel as u32,
+        p2 = in(reg) io_status_block as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -7567,22 +8703,37 @@ pub unsafe extern "C" fn nt_cancel_timer(
 pub unsafe fn nt_cancel_timer(timer_handle: HANDLE, current_state: *mut BOOLEAN) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x3D9F0734_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x3D9F0734_u32);
-    let params: [u32; 2] = [timer_handle as u32, current_state as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) timer_handle as u32,
+        p1 = in(reg) current_state as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) timer_handle as u32,
+        p1 = in(reg) current_state as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -7646,22 +8797,37 @@ pub unsafe extern "C" fn nt_cancel_timer2(timer_handle: HANDLE, parameters: PVOI
 pub unsafe fn nt_cancel_timer2(timer_handle: HANDLE, parameters: PVOID) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x09A2CAB3_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x09A2CAB3_u32);
-    let params: [u32; 2] = [timer_handle as u32, parameters as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) timer_handle as u32,
+        p1 = in(reg) parameters as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) timer_handle as u32,
+        p1 = in(reg) parameters as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -7731,25 +8897,37 @@ pub unsafe fn nt_cancel_wait_completion_packet(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x160C6680_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x160C6680_u32);
-    let params: [u32; 2] = [
-        wait_completion_packet_handle as u32,
-        remove_signaled_packet as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) wait_completion_packet_handle as u32,
+        p1 = in(reg) remove_signaled_packet as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) wait_completion_packet_handle as u32,
+        p1 = in(reg) remove_signaled_packet as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -7837,23 +9015,41 @@ pub unsafe fn nt_change_process_state(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -7941,23 +9137,41 @@ pub unsafe fn nt_change_thread_state(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -8023,21 +9237,33 @@ pub unsafe extern "C" fn nt_clear_all_savepoints_transaction(
 pub unsafe fn nt_clear_all_savepoints_transaction(transaction_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x08A2C9F1_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x08A2C9F1_u32);
-    let params: [u32; 1] = [transaction_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) transaction_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) transaction_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -8101,21 +9327,33 @@ pub unsafe extern "C" fn nt_clear_event(event_handle: HANDLE) -> NTSTATUS {
 pub unsafe fn nt_clear_event(event_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x2EB4CCE2_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x2EB4CCE2_u32);
-    let params: [u32; 1] = [event_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) event_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) event_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -8185,22 +9423,37 @@ pub unsafe fn nt_clear_savepoint_transaction(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x04904045_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x04904045_u32);
-    let params: [u32; 2] = [transaction_handle as u32, save_point_id as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) transaction_handle as u32,
+        p1 = in(reg) save_point_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) transaction_handle as u32,
+        p1 = in(reg) save_point_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -8264,21 +9517,33 @@ pub unsafe extern "C" fn nt_close(handle: HANDLE) -> NTSTATUS {
 pub unsafe fn nt_close(handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x0C9DF7C3_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x0C9DF7C3_u32);
-    let params: [u32; 1] = [handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -8350,27 +9615,41 @@ pub unsafe fn nt_close_object_audit_alarm(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x3AB4322A_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x3AB4322A_u32);
-    let params: [u32; 3] = [
-        subsystem_name as u32,
-        handle_id as u32,
-        generate_on_close as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) subsystem_name as u32,
+        p1 = in(reg) handle_id as u32,
+        p2 = in(reg) generate_on_close as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) subsystem_name as u32,
+        p1 = in(reg) handle_id as u32,
+        p2 = in(reg) generate_on_close as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -8440,22 +9719,37 @@ pub unsafe fn nt_commit_complete(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xD729BFE5_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xD729BFE5_u32);
-    let params: [u32; 2] = [enlistment_handle as u32, tm_virtual_clock as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) enlistment_handle as u32,
+        p1 = in(reg) tm_virtual_clock as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) enlistment_handle as u32,
+        p1 = in(reg) tm_virtual_clock as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -8525,22 +9819,37 @@ pub unsafe fn nt_commit_enlistment(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xFB3CD8EB_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xFB3CD8EB_u32);
-    let params: [u32; 2] = [enlistment_handle as u32, tm_virtual_clock as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) enlistment_handle as u32,
+        p1 = in(reg) tm_virtual_clock as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) enlistment_handle as u32,
+        p1 = in(reg) tm_virtual_clock as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -8607,22 +9916,37 @@ pub unsafe extern "C" fn nt_commit_registry_transaction(
 pub unsafe fn nt_commit_registry_transaction(registry_handle: HANDLE, wait: BOOL) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x0299020B_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x0299020B_u32);
-    let params: [u32; 2] = [registry_handle as u32, wait as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) registry_handle as u32,
+        p1 = in(reg) wait as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) registry_handle as u32,
+        p1 = in(reg) wait as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -8689,22 +10013,37 @@ pub unsafe extern "C" fn nt_commit_transaction(
 pub unsafe fn nt_commit_transaction(transaction_handle: HANDLE, wait: BOOLEAN) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x8F1BAA48_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x8F1BAA48_u32);
-    let params: [u32; 2] = [transaction_handle as u32, wait as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) transaction_handle as u32,
+        p1 = in(reg) wait as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) transaction_handle as u32,
+        p1 = in(reg) wait as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -8768,22 +10107,37 @@ pub unsafe extern "C" fn nt_compact_keys(count: ULONG, key_array: HANDLE) -> NTS
 pub unsafe fn nt_compact_keys(count: ULONG, key_array: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x3D9DD686_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x3D9DD686_u32);
-    let params: [u32; 2] = [count as u32, key_array as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) count as u32,
+        p1 = in(reg) key_array as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) count as u32,
+        p1 = in(reg) key_array as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -8853,22 +10207,37 @@ pub unsafe fn nt_compare_objects(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x632C877D_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x632C877D_u32);
-    let params: [u32; 2] = [first_object_handle as u32, second_object_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) first_object_handle as u32,
+        p1 = in(reg) second_object_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) first_object_handle as u32,
+        p1 = in(reg) second_object_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -8938,22 +10307,37 @@ pub unsafe fn nt_compare_signing_levels(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x142AC56E_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x142AC56E_u32);
-    let params: [u32; 2] = [unknown_parameter1 as u32, unknown_parameter2 as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) unknown_parameter1 as u32,
+        p1 = in(reg) unknown_parameter2 as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) unknown_parameter1 as u32,
+        p1 = in(reg) unknown_parameter2 as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -9025,27 +10409,41 @@ pub unsafe fn nt_compare_tokens(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x6DA94D7B_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x6DA94D7B_u32);
-    let params: [u32; 3] = [
-        first_token_handle as u32,
-        second_token_handle as u32,
-        equal as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) first_token_handle as u32,
+        p1 = in(reg) second_token_handle as u32,
+        p2 = in(reg) equal as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) first_token_handle as u32,
+        p1 = in(reg) second_token_handle as u32,
+        p2 = in(reg) equal as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -9109,21 +10507,33 @@ pub unsafe extern "C" fn nt_complete_connect_port(port_handle: HANDLE) -> NTSTAT
 pub unsafe fn nt_complete_connect_port(port_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x22FD5172_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x22FD5172_u32);
-    let params: [u32; 1] = [port_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) port_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) port_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -9187,21 +10597,33 @@ pub unsafe extern "C" fn nt_compress_key(key: HANDLE) -> NTSTATUS {
 pub unsafe fn nt_compress_key(key: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x754C9B3B_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x754C9B3B_u32);
-    let params: [u32; 1] = [key as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) key as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) key as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -9295,7 +10717,10 @@ pub unsafe fn nt_connect_port(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 28]",
         "push dword ptr [{params_ptr} + 24]",
         "push dword ptr [{params_ptr} + 20]",
@@ -9304,16 +10729,33 @@ pub unsafe fn nt_connect_port(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 32",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 36",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 32",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -9377,22 +10819,37 @@ pub unsafe extern "C" fn nt_continue(context_record: PCONTEXT, test_alert: BOOLE
 pub unsafe fn nt_continue(context_record: PCONTEXT, test_alert: BOOLEAN) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x32A65929_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x32A65929_u32);
-    let params: [u32; 2] = [context_record as u32, test_alert as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) context_record as u32,
+        p1 = in(reg) test_alert as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) context_record as u32,
+        p1 = in(reg) test_alert as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -9459,22 +10916,37 @@ pub unsafe extern "C" fn nt_continue_ex(
 pub unsafe fn nt_continue_ex(context_record: PCONTEXT, continue_argument: PVOID) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x518E9532_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x518E9532_u32);
-    let params: [u32; 2] = [context_record as u32, continue_argument as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) context_record as u32,
+        p1 = in(reg) continue_argument as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) context_record as u32,
+        p1 = in(reg) continue_argument as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -9548,29 +11020,45 @@ pub unsafe fn nt_convert_between_auxiliary_counter_and_performance_counter(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x7B8A7513_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x7B8A7513_u32);
-    let params: [u32; 4] = [
-        unknown_parameter1 as u32,
-        unknown_parameter2 as u32,
-        unknown_parameter3 as u32,
-        unknown_parameter4 as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) unknown_parameter1 as u32,
+        p1 = in(reg) unknown_parameter2 as u32,
+        p2 = in(reg) unknown_parameter3 as u32,
+        p3 = in(reg) unknown_parameter4 as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) unknown_parameter1 as u32,
+        p1 = in(reg) unknown_parameter2 as u32,
+        p2 = in(reg) unknown_parameter3 as u32,
+        p3 = in(reg) unknown_parameter4 as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -9670,7 +11158,10 @@ pub unsafe fn nt_copy_file_chunk(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 36]",
         "push dword ptr [{params_ptr} + 32]",
         "push dword ptr [{params_ptr} + 28]",
@@ -9681,16 +11172,35 @@ pub unsafe fn nt_copy_file_chunk(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 40",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 44",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 40",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -9762,27 +11272,41 @@ pub unsafe fn nt_create_cpu_partition(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x1E941E07_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x1E941E07_u32);
-    let params: [u32; 3] = [
-        partition_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) partition_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) partition_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -9848,18 +11372,26 @@ pub unsafe fn nt_create_cross_vm_event() -> NTSTATUS {
     let syscall_addr = sw3_get_random_syscall_address(0x025513F8_u32);
     let status: i32;
 
-    core::arch::asm!(
-
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 0",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 4",
+            gate = in(reg) wow64_gate as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+            "mov edx, esp",
+            "call {addr}",
+            addr = in(reg) syscall_addr as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -9933,29 +11465,45 @@ pub unsafe fn nt_create_cross_vm_mutant(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x8E4BE7AE_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x8E4BE7AE_u32);
-    let params: [u32; 4] = [
-        mutant_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-        initial_owner as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) mutant_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) initial_owner as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) mutant_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) initial_owner as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -10029,29 +11577,45 @@ pub unsafe fn nt_create_debug_object(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x6AB96A25_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x6AB96A25_u32);
-    let params: [u32; 4] = [
-        debug_object_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-        flags as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) debug_object_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) debug_object_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -10123,27 +11687,41 @@ pub unsafe fn nt_create_directory_object(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x2806389A_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x2806389A_u32);
-    let params: [u32; 3] = [
-        directory_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) directory_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) directory_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -10228,22 +11806,39 @@ pub unsafe fn nt_create_directory_object_ex(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -10340,7 +11935,10 @@ pub unsafe fn nt_create_enclave(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 32]",
         "push dword ptr [{params_ptr} + 28]",
         "push dword ptr [{params_ptr} + 24]",
@@ -10350,16 +11948,34 @@ pub unsafe fn nt_create_enclave(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 36",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 40",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 36",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -10453,7 +12069,10 @@ pub unsafe fn nt_create_enlistment(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 28]",
         "push dword ptr [{params_ptr} + 24]",
         "push dword ptr [{params_ptr} + 20]",
@@ -10462,16 +12081,33 @@ pub unsafe fn nt_create_enlistment(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 32",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 36",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 32",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -10556,22 +12192,39 @@ pub unsafe fn nt_create_event(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -10643,27 +12296,41 @@ pub unsafe fn nt_create_event_pair(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x308EA689_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x308EA689_u32);
-    let params: [u32; 3] = [
-        event_pair_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) event_pair_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) event_pair_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -10766,7 +12433,10 @@ pub unsafe fn nt_create_file(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 40]",
         "push dword ptr [{params_ptr} + 36]",
         "push dword ptr [{params_ptr} + 32]",
@@ -10778,16 +12448,36 @@ pub unsafe fn nt_create_file(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 44",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 48",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 40]",
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 44",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -10857,22 +12547,37 @@ pub unsafe fn nt_create_ir_timer(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xFDA71FF4_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xFDA71FF4_u32);
-    let params: [u32; 2] = [timer_handle as u32, desired_access as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) timer_handle as u32,
+        p1 = in(reg) desired_access as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) timer_handle as u32,
+        p1 = in(reg) desired_access as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -10946,29 +12651,45 @@ pub unsafe fn nt_create_io_completion(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x0C0B4CD9_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x0C0B4CD9_u32);
-    let params: [u32; 4] = [
-        io_completion_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-        count as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) io_completion_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) count as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) io_completion_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) count as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -11042,29 +12763,45 @@ pub unsafe fn nt_create_io_ring(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xE0B88879_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xE0B88879_u32);
-    let params: [u32; 4] = [
-        io_ring_handle as u32,
-        create_parameters as u32,
-        user_info as u32,
-        user_info_size as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) io_ring_handle as u32,
+        p1 = in(reg) create_parameters as u32,
+        p2 = in(reg) user_info as u32,
+        p3 = in(reg) user_info_size as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) io_ring_handle as u32,
+        p1 = in(reg) create_parameters as u32,
+        p2 = in(reg) user_info as u32,
+        p3 = in(reg) user_info_size as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -11136,27 +12873,41 @@ pub unsafe fn nt_create_job_object(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x09ABFCE9_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x09ABFCE9_u32);
-    let params: [u32; 3] = [
-        job_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) job_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) job_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -11228,23 +12979,41 @@ pub unsafe fn nt_create_job_set(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x1C90FAC2_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x1C90FAC2_u32);
-    let params: [u32; 3] = [num_job as u32, user_job_set as u32, flags as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) num_job as u32,
+        p1 = in(reg) user_job_set as u32,
+        p2 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) num_job as u32,
+        p1 = in(reg) user_job_set as u32,
+        p2 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -11335,7 +13104,10 @@ pub unsafe fn nt_create_key(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 24]",
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
@@ -11343,16 +13115,32 @@ pub unsafe fn nt_create_key(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 28",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 32",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 28",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -11446,7 +13234,10 @@ pub unsafe fn nt_create_key_transacted(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 28]",
         "push dword ptr [{params_ptr} + 24]",
         "push dword ptr [{params_ptr} + 20]",
@@ -11455,16 +13246,33 @@ pub unsafe fn nt_create_key_transacted(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 32",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 36",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 32",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -11538,29 +13346,45 @@ pub unsafe fn nt_create_keyed_event(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x306BD700_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x306BD700_u32);
-    let params: [u32; 4] = [
-        keyed_event_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-        flags as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) keyed_event_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) keyed_event_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -11657,7 +13481,10 @@ pub unsafe fn nt_create_low_box_token(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 32]",
         "push dword ptr [{params_ptr} + 28]",
         "push dword ptr [{params_ptr} + 24]",
@@ -11667,16 +13494,34 @@ pub unsafe fn nt_create_low_box_token(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 36",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 40",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 36",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -11770,7 +13615,10 @@ pub unsafe fn nt_create_mailslot_file(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 28]",
         "push dword ptr [{params_ptr} + 24]",
         "push dword ptr [{params_ptr} + 20]",
@@ -11779,16 +13627,33 @@ pub unsafe fn nt_create_mailslot_file(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 32",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 36",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 32",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -11862,29 +13727,45 @@ pub unsafe fn nt_create_mutant(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x34B628D6_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x34B628D6_u32);
-    let params: [u32; 4] = [
-        mutant_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-        initial_owner as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) mutant_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) initial_owner as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) mutant_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) initial_owner as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -11996,7 +13877,10 @@ pub unsafe fn nt_create_named_pipe_file(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 52]",
         "push dword ptr [{params_ptr} + 48]",
         "push dword ptr [{params_ptr} + 44]",
@@ -12011,16 +13895,39 @@ pub unsafe fn nt_create_named_pipe_file(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 56",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 60",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 52]",
+        "push dword ptr [{params_ptr} + 48]",
+        "push dword ptr [{params_ptr} + 44]",
+        "push dword ptr [{params_ptr} + 40]",
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 56",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -12094,29 +14001,45 @@ pub unsafe fn nt_create_paging_file(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xA8327878_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xA8327878_u32);
-    let params: [u32; 4] = [
-        page_file_name as u32,
-        minimum_size as u32,
-        maximum_size as u32,
-        priority as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) page_file_name as u32,
+        p1 = in(reg) minimum_size as u32,
+        p2 = in(reg) maximum_size as u32,
+        p3 = in(reg) priority as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) page_file_name as u32,
+        p1 = in(reg) minimum_size as u32,
+        p2 = in(reg) maximum_size as u32,
+        p3 = in(reg) priority as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -12190,29 +14113,45 @@ pub unsafe fn nt_create_partition(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xC29BC00B_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xC29BC00B_u32);
-    let params: [u32; 4] = [
-        partition_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-        preferred_node as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) partition_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) preferred_node as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) partition_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) preferred_node as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -12297,22 +14236,39 @@ pub unsafe fn nt_create_port(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -12386,29 +14342,45 @@ pub unsafe fn nt_create_private_namespace(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x38904B4F_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x38904B4F_u32);
-    let params: [u32; 4] = [
-        namespace_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-        boundary_descriptor as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) namespace_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) boundary_descriptor as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) namespace_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) boundary_descriptor as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -12502,7 +14474,10 @@ pub unsafe fn nt_create_process(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 28]",
         "push dword ptr [{params_ptr} + 24]",
         "push dword ptr [{params_ptr} + 20]",
@@ -12511,16 +14486,33 @@ pub unsafe fn nt_create_process(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 32",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 36",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 32",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -12617,7 +14609,10 @@ pub unsafe fn nt_create_process_ex(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 32]",
         "push dword ptr [{params_ptr} + 28]",
         "push dword ptr [{params_ptr} + 24]",
@@ -12627,16 +14622,34 @@ pub unsafe fn nt_create_process_ex(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 36",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 40",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 36",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -12721,22 +14734,39 @@ pub unsafe fn nt_create_process_state_change(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -12833,7 +14863,10 @@ pub unsafe fn nt_create_profile(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 32]",
         "push dword ptr [{params_ptr} + 28]",
         "push dword ptr [{params_ptr} + 24]",
@@ -12843,16 +14876,34 @@ pub unsafe fn nt_create_profile(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 36",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 40",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 36",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -12952,7 +15003,10 @@ pub unsafe fn nt_create_profile_ex(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 36]",
         "push dword ptr [{params_ptr} + 32]",
         "push dword ptr [{params_ptr} + 28]",
@@ -12963,16 +15017,35 @@ pub unsafe fn nt_create_profile_ex(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 40",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 44",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 40",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -13046,29 +15119,45 @@ pub unsafe fn nt_create_registry_transaction(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x408A0653_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x408A0653_u32);
-    let params: [u32; 4] = [
-        handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-        flags as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -13159,7 +15248,10 @@ pub unsafe fn nt_create_resource_manager(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 24]",
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
@@ -13167,16 +15259,32 @@ pub unsafe fn nt_create_resource_manager(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 28",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 32",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 28",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -13267,7 +15375,10 @@ pub unsafe fn nt_create_section(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 24]",
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
@@ -13275,16 +15386,32 @@ pub unsafe fn nt_create_section(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 28",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 32",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 28",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -13381,7 +15508,10 @@ pub unsafe fn nt_create_section_ex(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 32]",
         "push dword ptr [{params_ptr} + 28]",
         "push dword ptr [{params_ptr} + 24]",
@@ -13391,16 +15521,34 @@ pub unsafe fn nt_create_section_ex(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 36",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 40",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 36",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -13485,22 +15633,39 @@ pub unsafe fn nt_create_semaphore(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -13572,27 +15737,41 @@ pub unsafe fn nt_create_silo_object(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x5C905A0D_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x5C905A0D_u32);
-    let params: [u32; 3] = [
-        silo_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) silo_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) silo_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -13666,29 +15845,45 @@ pub unsafe fn nt_create_symbolic_link_object(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x84198C85_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x84198C85_u32);
-    let params: [u32; 4] = [
-        link_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-        link_target as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) link_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) link_target as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) link_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) link_target as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -13782,7 +15977,10 @@ pub unsafe fn nt_create_thread(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 28]",
         "push dword ptr [{params_ptr} + 24]",
         "push dword ptr [{params_ptr} + 20]",
@@ -13791,16 +15989,33 @@ pub unsafe fn nt_create_thread(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 32",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 36",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 32",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -13903,7 +16118,10 @@ pub unsafe fn nt_create_thread_ex(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 40]",
         "push dword ptr [{params_ptr} + 36]",
         "push dword ptr [{params_ptr} + 32]",
@@ -13915,16 +16133,36 @@ pub unsafe fn nt_create_thread_ex(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 44",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 48",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 40]",
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 44",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -14009,22 +16247,39 @@ pub unsafe fn nt_create_thread_state_change(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -14098,29 +16353,45 @@ pub unsafe fn nt_create_timer(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x258F112E_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x258F112E_u32);
-    let params: [u32; 4] = [
-        timer_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-        timer_type as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) timer_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) timer_type as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) timer_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) timer_type as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -14205,22 +16476,39 @@ pub unsafe fn nt_create_timer2(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -14329,7 +16617,10 @@ pub unsafe fn nt_create_token(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 48]",
         "push dword ptr [{params_ptr} + 44]",
         "push dword ptr [{params_ptr} + 40]",
@@ -14343,16 +16634,38 @@ pub unsafe fn nt_create_token(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 52",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 56",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 48]",
+        "push dword ptr [{params_ptr} + 44]",
+        "push dword ptr [{params_ptr} + 40]",
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 52",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -14473,7 +16786,10 @@ pub unsafe fn nt_create_token_ex(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 64]",
         "push dword ptr [{params_ptr} + 60]",
         "push dword ptr [{params_ptr} + 56]",
@@ -14491,16 +16807,42 @@ pub unsafe fn nt_create_token_ex(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 68",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 72",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 64]",
+        "push dword ptr [{params_ptr} + 60]",
+        "push dword ptr [{params_ptr} + 56]",
+        "push dword ptr [{params_ptr} + 52]",
+        "push dword ptr [{params_ptr} + 48]",
+        "push dword ptr [{params_ptr} + 44]",
+        "push dword ptr [{params_ptr} + 40]",
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 68",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -14600,7 +16942,10 @@ pub unsafe fn nt_create_transaction(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 36]",
         "push dword ptr [{params_ptr} + 32]",
         "push dword ptr [{params_ptr} + 28]",
@@ -14611,16 +16956,35 @@ pub unsafe fn nt_create_transaction(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 40",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 44",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 40",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -14708,23 +17072,41 @@ pub unsafe fn nt_create_transaction_manager(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -14827,7 +17209,10 @@ pub unsafe fn nt_create_user_process(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 40]",
         "push dword ptr [{params_ptr} + 36]",
         "push dword ptr [{params_ptr} + 32]",
@@ -14839,16 +17224,36 @@ pub unsafe fn nt_create_user_process(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 44",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 48",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 40]",
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 44",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -14920,27 +17325,41 @@ pub unsafe fn nt_create_wait_completion_packet(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x803FAE9D_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x803FAE9D_u32);
-    let params: [u32; 3] = [
-        wait_completion_packet_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) wait_completion_packet_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) wait_completion_packet_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -15025,22 +17444,39 @@ pub unsafe fn nt_create_waitable_port(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -15131,7 +17567,10 @@ pub unsafe fn nt_create_wnf_state_name(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 24]",
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
@@ -15139,16 +17578,32 @@ pub unsafe fn nt_create_wnf_state_name(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 28",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 32",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 28",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -15248,7 +17703,10 @@ pub unsafe fn nt_create_worker_factory(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 36]",
         "push dword ptr [{params_ptr} + 32]",
         "push dword ptr [{params_ptr} + 28]",
@@ -15259,16 +17717,35 @@ pub unsafe fn nt_create_worker_factory(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 40",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 44",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 40",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -15338,22 +17815,37 @@ pub unsafe fn nt_debug_active_process(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x4DDF5E50_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x4DDF5E50_u32);
-    let params: [u32; 2] = [process_handle as u32, debug_object_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) debug_object_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) debug_object_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -15425,27 +17917,41 @@ pub unsafe fn nt_debug_continue(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x189CFB10_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x189CFB10_u32);
-    let params: [u32; 3] = [
-        debug_object_handle as u32,
-        client_id as u32,
-        continue_status as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) debug_object_handle as u32,
+        p1 = in(reg) client_id as u32,
+        p2 = in(reg) continue_status as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) debug_object_handle as u32,
+        p1 = in(reg) client_id as u32,
+        p2 = in(reg) continue_status as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -15515,22 +18021,37 @@ pub unsafe fn nt_delay_execution(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xF269F2FB_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xF269F2FB_u32);
-    let params: [u32; 2] = [alertable as u32, delay_interval as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) alertable as u32,
+        p1 = in(reg) delay_interval as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) alertable as u32,
+        p1 = in(reg) delay_interval as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -15594,21 +18115,33 @@ pub unsafe extern "C" fn nt_delete_atom(atom: USHORT) -> NTSTATUS {
 pub unsafe fn nt_delete_atom(atom: USHORT) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xBD6BFEB5_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xBD6BFEB5_u32);
-    let params: [u32; 1] = [atom as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) atom as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) atom as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -15672,21 +18205,33 @@ pub unsafe extern "C" fn nt_delete_boot_entry(id: ULONG) -> NTSTATUS {
 pub unsafe fn nt_delete_boot_entry(id: ULONG) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x0989EEE0_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x0989EEE0_u32);
-    let params: [u32; 1] = [id as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -15750,21 +18295,33 @@ pub unsafe extern "C" fn nt_delete_driver_entry(id: ULONG) -> NTSTATUS {
 pub unsafe fn nt_delete_driver_entry(id: ULONG) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x19B5091A_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x19B5091A_u32);
-    let params: [u32; 1] = [id as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -15828,21 +18385,33 @@ pub unsafe extern "C" fn nt_delete_file(object_attributes: POBJECT_ATTRIBUTES) -
 pub unsafe fn nt_delete_file(object_attributes: POBJECT_ATTRIBUTES) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xD978CFC5_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xD978CFC5_u32);
-    let params: [u32; 1] = [object_attributes as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -15906,21 +18475,33 @@ pub unsafe extern "C" fn nt_delete_key(key_handle: HANDLE) -> NTSTATUS {
 pub unsafe fn nt_delete_key(key_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x67F296A5_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x67F296A5_u32);
-    let params: [u32; 1] = [key_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) key_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) key_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -15992,27 +18573,41 @@ pub unsafe fn nt_delete_object_audit_alarm(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x9C12F884_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x9C12F884_u32);
-    let params: [u32; 3] = [
-        subsystem_name as u32,
-        handle_id as u32,
-        generate_on_close as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) subsystem_name as u32,
+        p1 = in(reg) handle_id as u32,
+        p2 = in(reg) generate_on_close as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) subsystem_name as u32,
+        p1 = in(reg) handle_id as u32,
+        p2 = in(reg) generate_on_close as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -16076,21 +18671,33 @@ pub unsafe extern "C" fn nt_delete_private_namespace(namespace_handle: HANDLE) -
 pub unsafe fn nt_delete_private_namespace(namespace_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x16B42729_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x16B42729_u32);
-    let params: [u32; 1] = [namespace_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) namespace_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) namespace_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -16157,22 +18764,37 @@ pub unsafe extern "C" fn nt_delete_value_key(
 pub unsafe fn nt_delete_value_key(key_handle: HANDLE, value_name: PUNICODE_STRING) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x885D7C2F_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x885D7C2F_u32);
-    let params: [u32; 2] = [key_handle as u32, value_name as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) key_handle as u32,
+        p1 = in(reg) value_name as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) key_handle as u32,
+        p1 = in(reg) value_name as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -16242,22 +18864,37 @@ pub unsafe fn nt_delete_wnf_state_data(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xE69CC853_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xE69CC853_u32);
-    let params: [u32; 2] = [state_name as u32, explicit_scope as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) state_name as u32,
+        p1 = in(reg) explicit_scope as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) state_name as u32,
+        p1 = in(reg) explicit_scope as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -16321,21 +18958,33 @@ pub unsafe extern "C" fn nt_delete_wnf_state_name(state_name: PCWNF_STATE_NAME) 
 pub unsafe fn nt_delete_wnf_state_name(state_name: PCWNF_STATE_NAME) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xFC92D746_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xFC92D746_u32);
-    let params: [u32; 1] = [state_name as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) state_name as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) state_name as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -16421,23 +19070,24 @@ pub unsafe fn nt_device_io_control_file(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x7C247C82_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x7C247C82_u32);
-    let params: [u32; 10] = unsafe {
-        [
-            file_handle as u32,
-            event as u32,
-            core::mem::transmute::<_, u32>(apc_routine),
-            apc_context as u32,
-            io_status_block as u32,
-            io_control_code as u32,
-            input_buffer as u32,
-            input_buffer_length as u32,
-            output_buffer as u32,
-            output_buffer_length as u32,
-        ]
-    };
+    let params: [u32; 10] = [
+        file_handle as u32,
+        event as u32,
+        core::mem::transmute::<_, u32>(apc_routine),
+        apc_context as u32,
+        io_status_block as u32,
+        io_control_code as u32,
+        input_buffer as u32,
+        input_buffer_length as u32,
+        output_buffer as u32,
+        output_buffer_length as u32,
+    ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 36]",
         "push dword ptr [{params_ptr} + 32]",
         "push dword ptr [{params_ptr} + 28]",
@@ -16448,16 +19098,35 @@ pub unsafe fn nt_device_io_control_file(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 40",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 44",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 40",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -16542,22 +19211,39 @@ pub unsafe fn nt_direct_graphics_call(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -16623,18 +19309,26 @@ pub unsafe fn nt_disable_last_known_good() -> NTSTATUS {
     let syscall_addr = sw3_get_random_syscall_address(0x4575C942_u32);
     let status: i32;
 
-    core::arch::asm!(
-
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 0",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 4",
+            gate = in(reg) wow64_gate as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+            "mov edx, esp",
+            "call {addr}",
+            addr = in(reg) syscall_addr as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -16698,21 +19392,33 @@ pub unsafe extern "C" fn nt_display_string(string: PUNICODE_STRING) -> NTSTATUS 
 pub unsafe fn nt_display_string(string: PUNICODE_STRING) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x52E51A44_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x52E51A44_u32);
-    let params: [u32; 1] = [string as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) string as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) string as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -16776,21 +19482,33 @@ pub unsafe extern "C" fn nt_draw_text(string: PUNICODE_STRING) -> NTSTATUS {
 pub unsafe fn nt_draw_text(string: PUNICODE_STRING) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xEF7FF4F1_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xEF7FF4F1_u32);
-    let params: [u32; 1] = [string as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) string as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) string as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -16881,7 +19599,10 @@ pub unsafe fn nt_duplicate_object(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 24]",
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
@@ -16889,16 +19610,32 @@ pub unsafe fn nt_duplicate_object(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 28",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 32",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 28",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -16986,23 +19723,41 @@ pub unsafe fn nt_duplicate_token(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -17068,18 +19823,26 @@ pub unsafe fn nt_enable_last_known_good() -> NTSTATUS {
     let syscall_addr = sw3_get_random_syscall_address(0x78D55656_u32);
     let status: i32;
 
-    core::arch::asm!(
-
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 0",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 4",
+            gate = in(reg) wow64_gate as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+            "mov edx, esp",
+            "call {addr}",
+            addr = in(reg) syscall_addr as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -17146,22 +19909,37 @@ pub unsafe extern "C" fn nt_enumerate_boot_entries(
 pub unsafe fn nt_enumerate_boot_entries(buffer: PVOID, buffer_length: *mut ULONG) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x4B127491_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x4B127491_u32);
-    let params: [u32; 2] = [buffer as u32, buffer_length as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) buffer as u32,
+        p1 = in(reg) buffer_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) buffer as u32,
+        p1 = in(reg) buffer_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -17228,22 +20006,37 @@ pub unsafe extern "C" fn nt_enumerate_driver_entries(
 pub unsafe fn nt_enumerate_driver_entries(buffer: PVOID, buffer_length: *mut ULONG) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x0C8C1D0F_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x0C8C1D0F_u32);
-    let params: [u32; 2] = [buffer as u32, buffer_length as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) buffer as u32,
+        p1 = in(reg) buffer_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) buffer as u32,
+        p1 = in(reg) buffer_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -17331,23 +20124,41 @@ pub unsafe fn nt_enumerate_key(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -17419,27 +20230,41 @@ pub unsafe fn nt_enumerate_system_environment_values_ex(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x4DDF2922_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x4DDF2922_u32);
-    let params: [u32; 3] = [
-        information_class as u32,
-        buffer as u32,
-        buffer_length as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) information_class as u32,
+        p1 = in(reg) buffer as u32,
+        p2 = in(reg) buffer_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) information_class as u32,
+        p1 = in(reg) buffer as u32,
+        p2 = in(reg) buffer_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -17524,22 +20349,39 @@ pub unsafe fn nt_enumerate_transaction_object(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -17627,23 +20469,41 @@ pub unsafe fn nt_enumerate_value_key(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -17713,22 +20573,37 @@ pub unsafe fn nt_extend_section(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x148F325B_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x148F325B_u32);
-    let params: [u32; 2] = [section_handle as u32, new_section_size as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) section_handle as u32,
+        p1 = in(reg) new_section_size as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) section_handle as u32,
+        p1 = in(reg) new_section_size as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -17813,22 +20688,39 @@ pub unsafe fn nt_filter_boot_option(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -17916,23 +20808,41 @@ pub unsafe fn nt_filter_token(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -18044,7 +20954,10 @@ pub unsafe fn nt_filter_token_ex(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 52]",
         "push dword ptr [{params_ptr} + 48]",
         "push dword ptr [{params_ptr} + 44]",
@@ -18059,16 +20972,39 @@ pub unsafe fn nt_filter_token_ex(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 56",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 60",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 52]",
+        "push dword ptr [{params_ptr} + 48]",
+        "push dword ptr [{params_ptr} + 44]",
+        "push dword ptr [{params_ptr} + 40]",
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 56",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -18136,23 +21072,41 @@ pub unsafe extern "C" fn nt_find_atom(
 pub unsafe fn nt_find_atom(atom_name: PWSTR, length: ULONG, atom: *mut USHORT) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xF26B947A_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xF26B947A_u32);
-    let params: [u32; 3] = [atom_name as u32, length as u32, atom as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) atom_name as u32,
+        p1 = in(reg) length as u32,
+        p2 = in(reg) atom as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) atom_name as u32,
+        p1 = in(reg) length as u32,
+        p2 = in(reg) atom as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -18222,22 +21176,37 @@ pub unsafe fn nt_flush_buffers_file(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xB0BBBE10_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xB0BBBE10_u32);
-    let params: [u32; 2] = [file_handle as u32, io_status_block as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) file_handle as u32,
+        p1 = in(reg) io_status_block as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) file_handle as u32,
+        p1 = in(reg) io_status_block as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -18322,22 +21291,39 @@ pub unsafe fn nt_flush_buffers_file_ex(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -18407,22 +21393,37 @@ pub unsafe fn nt_flush_install_ui_language(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xE4B4DBEE_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xE4B4DBEE_u32);
-    let params: [u32; 2] = [install_ui_language as u32, set_comitted_flag as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) install_ui_language as u32,
+        p1 = in(reg) set_comitted_flag as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) install_ui_language as u32,
+        p1 = in(reg) set_comitted_flag as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -18494,23 +21495,41 @@ pub unsafe fn nt_flush_instruction_cache(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x6D2E9F79_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x6D2E9F79_u32);
-    let params: [u32; 3] = [process_handle as u32, base_address as u32, length as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) base_address as u32,
+        p2 = in(reg) length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) base_address as u32,
+        p2 = in(reg) length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -18574,21 +21593,33 @@ pub unsafe extern "C" fn nt_flush_key(key_handle: HANDLE) -> NTSTATUS {
 pub unsafe fn nt_flush_key(key_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x272474F9_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x272474F9_u32);
-    let params: [u32; 1] = [key_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) key_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) key_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -18654,18 +21685,26 @@ pub unsafe fn nt_flush_process_write_buffers() -> NTSTATUS {
     let syscall_addr = sw3_get_random_syscall_address(0x1EAC39FC_u32);
     let status: i32;
 
-    core::arch::asm!(
-
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 0",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 4",
+            gate = in(reg) wow64_gate as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+            "mov edx, esp",
+            "call {addr}",
+            addr = in(reg) syscall_addr as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -18739,29 +21778,45 @@ pub unsafe fn nt_flush_virtual_memory(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x01922903_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x01922903_u32);
-    let params: [u32; 4] = [
-        process_handle as u32,
-        base_address as u32,
-        region_size as u32,
-        io_status_block as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) base_address as u32,
+        p2 = in(reg) region_size as u32,
+        p3 = in(reg) io_status_block as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) base_address as u32,
+        p2 = in(reg) region_size as u32,
+        p3 = in(reg) io_status_block as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -18827,18 +21882,26 @@ pub unsafe fn nt_flush_write_buffer() -> NTSTATUS {
     let syscall_addr = sw3_get_random_syscall_address(0x81BBB915_u32);
     let status: i32;
 
-    core::arch::asm!(
-
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 0",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 4",
+            gate = in(reg) wow64_gate as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+            "mov edx, esp",
+            "call {addr}",
+            addr = in(reg) syscall_addr as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -18910,27 +21973,41 @@ pub unsafe fn nt_free_user_physical_pages(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x9DA04E8F_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x9DA04E8F_u32);
-    let params: [u32; 3] = [
-        process_handle as u32,
-        number_of_pages as u32,
-        user_pfn_array as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) number_of_pages as u32,
+        p2 = in(reg) user_pfn_array as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) number_of_pages as u32,
+        p2 = in(reg) user_pfn_array as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -19004,29 +22081,45 @@ pub unsafe fn nt_free_virtual_memory(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x19820515_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x19820515_u32);
-    let params: [u32; 4] = [
-        process_handle as u32,
-        base_address as u32,
-        region_size as u32,
-        free_type as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) base_address as u32,
+        p2 = in(reg) region_size as u32,
+        p3 = in(reg) free_type as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) base_address as u32,
+        p2 = in(reg) region_size as u32,
+        p3 = in(reg) free_type as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -19090,21 +22183,33 @@ pub unsafe extern "C" fn nt_freeze_registry(time_out_in_seconds: ULONG) -> NTSTA
 pub unsafe fn nt_freeze_registry(time_out_in_seconds: ULONG) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x0293001B_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x0293001B_u32);
-    let params: [u32; 1] = [time_out_in_seconds as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) time_out_in_seconds as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) time_out_in_seconds as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -19174,22 +22279,37 @@ pub unsafe fn nt_freeze_transactions(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xC31AF1BD_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xC31AF1BD_u32);
-    let params: [u32; 2] = [freeze_timeout as u32, thaw_timeout as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) freeze_timeout as u32,
+        p1 = in(reg) thaw_timeout as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) freeze_timeout as u32,
+        p1 = in(reg) thaw_timeout as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -19275,23 +22395,24 @@ pub unsafe fn nt_fs_control_file(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xC998BB4F_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xC998BB4F_u32);
-    let params: [u32; 10] = unsafe {
-        [
-            file_handle as u32,
-            event as u32,
-            core::mem::transmute::<_, u32>(apc_routine),
-            apc_context as u32,
-            io_status_block as u32,
-            fs_control_code as u32,
-            input_buffer as u32,
-            input_buffer_length as u32,
-            output_buffer as u32,
-            output_buffer_length as u32,
-        ]
-    };
+    let params: [u32; 10] = [
+        file_handle as u32,
+        event as u32,
+        core::mem::transmute::<_, u32>(apc_routine),
+        apc_context as u32,
+        io_status_block as u32,
+        fs_control_code as u32,
+        input_buffer as u32,
+        input_buffer_length as u32,
+        output_buffer as u32,
+        output_buffer_length as u32,
+    ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 36]",
         "push dword ptr [{params_ptr} + 32]",
         "push dword ptr [{params_ptr} + 28]",
@@ -19302,16 +22423,35 @@ pub unsafe fn nt_fs_control_file(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 40",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 44",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 40",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -19399,23 +22539,41 @@ pub unsafe fn nt_get_cached_signing_level(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -19503,23 +22661,41 @@ pub unsafe fn nt_get_complete_wnf_state_subscription(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -19586,22 +22762,37 @@ pub unsafe extern "C" fn nt_get_context_thread(
 pub unsafe fn nt_get_context_thread(thread_handle: HANDLE, thread_context: PCONTEXT) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x0B98072B_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x0B98072B_u32);
-    let params: [u32; 2] = [thread_handle as u32, thread_context as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) thread_handle as u32,
+        p1 = in(reg) thread_context as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) thread_handle as u32,
+        p1 = in(reg) thread_context as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -19667,18 +22858,26 @@ pub unsafe fn nt_get_current_processor_number() -> NTSTATUS {
     let syscall_addr = sw3_get_random_syscall_address(0x872AB5EA_u32);
     let status: i32;
 
-    core::arch::asm!(
-
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 0",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 4",
+            gate = in(reg) wow64_gate as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+            "mov edx, esp",
+            "call {addr}",
+            addr = in(reg) syscall_addr as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -19742,21 +22941,33 @@ pub unsafe extern "C" fn nt_get_current_processor_number_ex(proc_number: *mut UL
 pub unsafe fn nt_get_current_processor_number_ex(proc_number: *mut ULONG) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x30C77C12_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x30C77C12_u32);
-    let params: [u32; 1] = [proc_number as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) proc_number as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) proc_number as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -19820,22 +23031,37 @@ pub unsafe extern "C" fn nt_get_device_power_state(device: HANDLE, state: *mut u
 pub unsafe fn nt_get_device_power_state(device: HANDLE, state: *mut u32) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x36C8386C_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x36C8386C_u32);
-    let params: [u32; 2] = [device as u32, state as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) device as u32,
+        p1 = in(reg) state as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) device as u32,
+        p1 = in(reg) state as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -19907,23 +23133,41 @@ pub unsafe fn nt_get_mui_registry_info(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xEB74F1FC_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xEB74F1FC_u32);
-    let params: [u32; 3] = [flags as u32, data_size as u32, system_data as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) flags as u32,
+        p1 = in(reg) data_size as u32,
+        p2 = in(reg) system_data as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) flags as u32,
+        p1 = in(reg) data_size as u32,
+        p2 = in(reg) system_data as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -20008,22 +23252,39 @@ pub unsafe fn nt_get_next_process(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -20111,23 +23372,41 @@ pub unsafe fn nt_get_next_thread(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -20212,22 +23491,39 @@ pub unsafe fn nt_get_nls_section_ptr(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -20318,7 +23614,10 @@ pub unsafe fn nt_get_notification_resource_manager(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 24]",
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
@@ -20326,16 +23625,32 @@ pub unsafe fn nt_get_notification_resource_manager(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 28",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 32",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 28",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -20409,29 +23724,45 @@ pub unsafe fn nt_get_plug_play_event(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xCECD2D9A_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xCECD2D9A_u32);
-    let params: [u32; 4] = [
-        event_handle as u32,
-        context as u32,
-        event_block as u32,
-        event_buffer_size as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) event_handle as u32,
+        p1 = in(reg) context as u32,
+        p2 = in(reg) event_block as u32,
+        p3 = in(reg) event_buffer_size as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) event_handle as u32,
+        p1 = in(reg) context as u32,
+        p2 = in(reg) event_block as u32,
+        p3 = in(reg) event_buffer_size as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -20522,7 +23853,10 @@ pub unsafe fn nt_get_write_watch(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 24]",
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
@@ -20530,16 +23864,32 @@ pub unsafe fn nt_get_write_watch(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 28",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 32",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 28",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -20603,21 +23953,33 @@ pub unsafe extern "C" fn nt_impersonate_anonymous_token(thread_handle: HANDLE) -
 pub unsafe fn nt_impersonate_anonymous_token(thread_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x3B996B24_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x3B996B24_u32);
-    let params: [u32; 1] = [thread_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) thread_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) thread_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -20687,22 +24049,37 @@ pub unsafe fn nt_impersonate_client_of_port(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x54F95574_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x54F95574_u32);
-    let params: [u32; 2] = [port_handle as u32, message as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) message as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) message as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -20774,27 +24151,41 @@ pub unsafe fn nt_impersonate_thread(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x2C8D3E3B_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x2C8D3E3B_u32);
-    let params: [u32; 3] = [
-        server_thread_handle as u32,
-        client_thread_handle as u32,
-        security_qos as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) server_thread_handle as u32,
+        p1 = in(reg) client_thread_handle as u32,
+        p2 = in(reg) security_qos as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) server_thread_handle as u32,
+        p1 = in(reg) client_thread_handle as u32,
+        p2 = in(reg) security_qos as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -20879,22 +24270,39 @@ pub unsafe fn nt_initialize_enclave(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -20966,27 +24374,41 @@ pub unsafe fn nt_initialize_nls_files(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x11573809_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x11573809_u32);
-    let params: [u32; 3] = [
-        base_address as u32,
-        default_locale_id as u32,
-        default_casing_table_size as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) base_address as u32,
+        p1 = in(reg) default_locale_id as u32,
+        p2 = in(reg) default_casing_table_size as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) base_address as u32,
+        p1 = in(reg) default_locale_id as u32,
+        p2 = in(reg) default_casing_table_size as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -21050,21 +24472,33 @@ pub unsafe extern "C" fn nt_initialize_registry(boot_condition: USHORT) -> NTSTA
 pub unsafe fn nt_initialize_registry(boot_condition: USHORT) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x4CDD465D_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x4CDD465D_u32);
-    let params: [u32; 1] = [boot_condition as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) boot_condition as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) boot_condition as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -21138,29 +24572,45 @@ pub unsafe fn nt_initiate_power_action(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x3E91C2F3_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x3E91C2F3_u32);
-    let params: [u32; 4] = [
-        system_action as u32,
-        lightest_system_state as u32,
-        flags as u32,
-        asynchronous as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) system_action as u32,
+        p1 = in(reg) lightest_system_state as u32,
+        p2 = in(reg) flags as u32,
+        p3 = in(reg) asynchronous as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) system_action as u32,
+        p1 = in(reg) lightest_system_state as u32,
+        p2 = in(reg) flags as u32,
+        p3 = in(reg) asynchronous as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -21227,22 +24677,37 @@ pub unsafe extern "C" fn nt_is_process_in_job(
 pub unsafe fn nt_is_process_in_job(process_handle: HANDLE, job_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x5B9EACF7_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x5B9EACF7_u32);
-    let params: [u32; 2] = [process_handle as u32, job_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) job_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) job_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -21308,18 +24773,26 @@ pub unsafe fn nt_is_system_resume_automatic() -> NTSTATUS {
     let syscall_addr = sw3_get_random_syscall_address(0x3162FECE_u32);
     let status: i32;
 
-    core::arch::asm!(
-
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 0",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 4",
+            gate = in(reg) wow64_gate as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+            "mov edx, esp",
+            "call {addr}",
+            addr = in(reg) syscall_addr as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -21385,18 +24858,26 @@ pub unsafe fn nt_is_ui_language_comitted() -> NTSTATUS {
     let syscall_addr = sw3_get_random_syscall_address(0x559F1FB1_u32);
     let status: i32;
 
-    core::arch::asm!(
-
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 0",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 4",
+            gate = in(reg) wow64_gate as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+            "mov edx, esp",
+            "call {addr}",
+            addr = in(reg) syscall_addr as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -21462,18 +24943,26 @@ pub unsafe fn nt_list_transactions() -> NTSTATUS {
     let syscall_addr = sw3_get_random_syscall_address(0x076A0DED_u32);
     let status: i32;
 
-    core::arch::asm!(
-
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 0",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 4",
+            gate = in(reg) wow64_gate as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+            "mov edx, esp",
+            "call {addr}",
+            addr = in(reg) syscall_addr as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -21540,22 +25029,37 @@ pub unsafe extern "C" fn nt_listen_port(
 pub unsafe fn nt_listen_port(port_handle: HANDLE, connection_request: PPORT_MESSAGE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x22B1011E_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x22B1011E_u32);
-    let params: [u32; 2] = [port_handle as u32, connection_request as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) connection_request as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) connection_request as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -21619,21 +25123,33 @@ pub unsafe extern "C" fn nt_load_driver(driver_service_name: PUNICODE_STRING) ->
 pub unsafe fn nt_load_driver(driver_service_name: PUNICODE_STRING) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x76911E68_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x76911E68_u32);
-    let params: [u32; 1] = [driver_service_name as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) driver_service_name as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) driver_service_name as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -21730,7 +25246,10 @@ pub unsafe fn nt_load_enclave_data(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 32]",
         "push dword ptr [{params_ptr} + 28]",
         "push dword ptr [{params_ptr} + 24]",
@@ -21740,16 +25259,34 @@ pub unsafe fn nt_load_enclave_data(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 36",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 40",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 36",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -21816,22 +25353,37 @@ pub unsafe extern "C" fn nt_load_hot_patch(
 pub unsafe fn nt_load_hot_patch(hot_patch_name: PUNICODE_STRING, load_flag: ULONG) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xECDE21EA_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xECDE21EA_u32);
-    let params: [u32; 2] = [hot_patch_name as u32, load_flag as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) hot_patch_name as u32,
+        p1 = in(reg) load_flag as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) hot_patch_name as u32,
+        p1 = in(reg) load_flag as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -21901,22 +25453,37 @@ pub unsafe fn nt_load_key(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x4BEC6834_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x4BEC6834_u32);
-    let params: [u32; 2] = [target_key as u32, source_file as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) target_key as u32,
+        p1 = in(reg) source_file as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) target_key as u32,
+        p1 = in(reg) source_file as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -21988,23 +25555,41 @@ pub unsafe fn nt_load_key2(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x7FA7F678_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x7FA7F678_u32);
-    let params: [u32; 3] = [target_key as u32, source_file as u32, flags as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) target_key as u32,
+        p1 = in(reg) source_file as u32,
+        p2 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) target_key as u32,
+        p1 = in(reg) source_file as u32,
+        p2 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -22095,7 +25680,10 @@ pub unsafe fn nt_load_key3(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 24]",
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
@@ -22103,16 +25691,32 @@ pub unsafe fn nt_load_key3(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 28",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 32",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 28",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -22206,7 +25810,10 @@ pub unsafe fn nt_load_key_ex(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 28]",
         "push dword ptr [{params_ptr} + 24]",
         "push dword ptr [{params_ptr} + 20]",
@@ -22215,16 +25822,33 @@ pub unsafe fn nt_load_key_ex(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 32",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 36",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 32",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -22310,23 +25934,24 @@ pub unsafe fn nt_lock_file(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x36B75638_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x36B75638_u32);
-    let params: [u32; 10] = unsafe {
-        [
-            file_handle as u32,
-            event as u32,
-            core::mem::transmute::<_, u32>(apc_routine),
-            apc_context as u32,
-            io_status_block as u32,
-            byte_offset as u32,
-            length as u32,
-            key as u32,
-            fail_immediately as u32,
-            exclusive_lock as u32,
-        ]
-    };
+    let params: [u32; 10] = [
+        file_handle as u32,
+        event as u32,
+        core::mem::transmute::<_, u32>(apc_routine),
+        apc_context as u32,
+        io_status_block as u32,
+        byte_offset as u32,
+        length as u32,
+        key as u32,
+        fail_immediately as u32,
+        exclusive_lock as u32,
+    ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 36]",
         "push dword ptr [{params_ptr} + 32]",
         "push dword ptr [{params_ptr} + 28]",
@@ -22337,16 +25962,35 @@ pub unsafe fn nt_lock_file(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 40",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 44",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 40",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -22416,22 +26060,37 @@ pub unsafe fn nt_lock_product_activation_keys(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xC131C6A6_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xC131C6A6_u32);
-    let params: [u32; 2] = [p_private_ver as u32, p_safe_mode as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) p_private_ver as u32,
+        p1 = in(reg) p_safe_mode as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) p_private_ver as u32,
+        p1 = in(reg) p_safe_mode as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -22495,21 +26154,33 @@ pub unsafe extern "C" fn nt_lock_registry_key(key_handle: HANDLE) -> NTSTATUS {
 pub unsafe fn nt_lock_registry_key(key_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x9F84FA78_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x9F84FA78_u32);
-    let params: [u32; 1] = [key_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) key_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) key_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -22583,29 +26254,45 @@ pub unsafe fn nt_lock_virtual_memory(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x1B91EE9D_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x1B91EE9D_u32);
-    let params: [u32; 4] = [
-        process_handle as u32,
-        base_address as u32,
-        region_size as u32,
-        map_type as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) base_address as u32,
+        p2 = in(reg) region_size as u32,
+        p3 = in(reg) map_type as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) base_address as u32,
+        p2 = in(reg) region_size as u32,
+        p3 = in(reg) map_type as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -22669,21 +26356,33 @@ pub unsafe extern "C" fn nt_make_permanent_object(handle: HANDLE) -> NTSTATUS {
 pub unsafe fn nt_make_permanent_object(handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x90ABA81F_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x90ABA81F_u32);
-    let params: [u32; 1] = [handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -22747,21 +26446,33 @@ pub unsafe extern "C" fn nt_make_temporary_object(handle: HANDLE) -> NTSTATUS {
 pub unsafe fn nt_make_temporary_object(handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x3896466B_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x3896466B_u32);
-    let params: [u32; 1] = [handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -22835,29 +26546,45 @@ pub unsafe fn nt_manage_hot_patch(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x40ED487E_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x40ED487E_u32);
-    let params: [u32; 4] = [
-        unknown_parameter1 as u32,
-        unknown_parameter2 as u32,
-        unknown_parameter3 as u32,
-        unknown_parameter4 as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) unknown_parameter1 as u32,
+        p1 = in(reg) unknown_parameter2 as u32,
+        p2 = in(reg) unknown_parameter3 as u32,
+        p3 = in(reg) unknown_parameter4 as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) unknown_parameter1 as u32,
+        p1 = in(reg) unknown_parameter2 as u32,
+        p2 = in(reg) unknown_parameter3 as u32,
+        p3 = in(reg) unknown_parameter4 as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -22942,22 +26669,39 @@ pub unsafe fn nt_manage_partition(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -23042,22 +26786,39 @@ pub unsafe fn nt_manage_wob_ticket(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -23145,23 +26906,41 @@ pub unsafe fn nt_map_cmf_module(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -23233,27 +27012,41 @@ pub unsafe fn nt_map_user_physical_pages(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x01B34E0C_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x01B34E0C_u32);
-    let params: [u32; 3] = [
-        virtual_address as u32,
-        number_of_pages as u32,
-        user_pfn_array as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) virtual_address as u32,
+        p1 = in(reg) number_of_pages as u32,
+        p2 = in(reg) user_pfn_array as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) virtual_address as u32,
+        p1 = in(reg) number_of_pages as u32,
+        p2 = in(reg) user_pfn_array as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -23325,27 +27118,41 @@ pub unsafe fn nt_map_user_physical_pages_scatter(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x33892109_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x33892109_u32);
-    let params: [u32; 3] = [
-        virtual_addresses as u32,
-        number_of_pages as u32,
-        user_pfn_array as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) virtual_addresses as u32,
+        p1 = in(reg) number_of_pages as u32,
+        p2 = in(reg) user_pfn_array as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) virtual_addresses as u32,
+        p1 = in(reg) number_of_pages as u32,
+        p2 = in(reg) user_pfn_array as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -23445,7 +27252,10 @@ pub unsafe fn nt_map_view_of_section(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 36]",
         "push dword ptr [{params_ptr} + 32]",
         "push dword ptr [{params_ptr} + 28]",
@@ -23456,16 +27266,35 @@ pub unsafe fn nt_map_view_of_section(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 40",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 44",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 40",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -23562,7 +27391,10 @@ pub unsafe fn nt_map_view_of_section_ex(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 32]",
         "push dword ptr [{params_ptr} + 28]",
         "push dword ptr [{params_ptr} + 24]",
@@ -23572,16 +27404,34 @@ pub unsafe fn nt_map_view_of_section_ex(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 36",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 40",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 36",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -23647,18 +27497,26 @@ pub unsafe fn nt_marshall_transaction() -> NTSTATUS {
     let syscall_addr = sw3_get_random_syscall_address(0xE10EE198_u32);
     let status: i32;
 
-    core::arch::asm!(
-
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 0",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 4",
+            gate = in(reg) wow64_gate as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+            "mov edx, esp",
+            "call {addr}",
+            addr = in(reg) syscall_addr as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -23722,21 +27580,33 @@ pub unsafe extern "C" fn nt_modify_boot_entry(boot_entry: PVOID) -> NTSTATUS {
 pub unsafe fn nt_modify_boot_entry(boot_entry: PVOID) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x09940712_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x09940712_u32);
-    let params: [u32; 1] = [boot_entry as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) boot_entry as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) boot_entry as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -23800,21 +27670,33 @@ pub unsafe extern "C" fn nt_modify_driver_entry(driver_entry: PVOID) -> NTSTATUS
 pub unsafe fn nt_modify_driver_entry(driver_entry: PVOID) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xCD52DBDC_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xCD52DBDC_u32);
-    let params: [u32; 1] = [driver_entry as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) driver_entry as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) driver_entry as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -23898,22 +27780,23 @@ pub unsafe fn nt_notify_change_directory_file(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x36D8058E_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x36D8058E_u32);
-    let params: [u32; 9] = unsafe {
-        [
-            file_handle as u32,
-            event as u32,
-            core::mem::transmute::<_, u32>(apc_routine),
-            apc_context as u32,
-            io_status_block as u32,
-            buffer as u32,
-            length as u32,
-            completion_filter as u32,
-            watch_tree as u32,
-        ]
-    };
+    let params: [u32; 9] = [
+        file_handle as u32,
+        event as u32,
+        core::mem::transmute::<_, u32>(apc_routine),
+        apc_context as u32,
+        io_status_block as u32,
+        buffer as u32,
+        length as u32,
+        completion_filter as u32,
+        watch_tree as u32,
+    ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 32]",
         "push dword ptr [{params_ptr} + 28]",
         "push dword ptr [{params_ptr} + 24]",
@@ -23923,16 +27806,34 @@ pub unsafe fn nt_notify_change_directory_file(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 36",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 40",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 36",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -24018,23 +27919,24 @@ pub unsafe fn nt_notify_change_directory_file_ex(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x9557E1AB_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x9557E1AB_u32);
-    let params: [u32; 10] = unsafe {
-        [
-            file_handle as u32,
-            event as u32,
-            core::mem::transmute::<_, u32>(apc_routine),
-            apc_context as u32,
-            io_status_block as u32,
-            buffer as u32,
-            length as u32,
-            completion_filter as u32,
-            watch_tree as u32,
-            directory_notify_information_class as u32,
-        ]
-    };
+    let params: [u32; 10] = [
+        file_handle as u32,
+        event as u32,
+        core::mem::transmute::<_, u32>(apc_routine),
+        apc_context as u32,
+        io_status_block as u32,
+        buffer as u32,
+        length as u32,
+        completion_filter as u32,
+        watch_tree as u32,
+        directory_notify_information_class as u32,
+    ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 36]",
         "push dword ptr [{params_ptr} + 32]",
         "push dword ptr [{params_ptr} + 28]",
@@ -24045,16 +27947,35 @@ pub unsafe fn nt_notify_change_directory_file_ex(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 40",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 44",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 40",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -24140,23 +28061,24 @@ pub unsafe fn nt_notify_change_key(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x984DEFB2_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x984DEFB2_u32);
-    let params: [u32; 10] = unsafe {
-        [
-            key_handle as u32,
-            event as u32,
-            core::mem::transmute::<_, u32>(apc_routine),
-            apc_context as u32,
-            io_status_block as u32,
-            completion_filter as u32,
-            watch_tree as u32,
-            buffer as u32,
-            buffer_size as u32,
-            asynchronous as u32,
-        ]
-    };
+    let params: [u32; 10] = [
+        key_handle as u32,
+        event as u32,
+        core::mem::transmute::<_, u32>(apc_routine),
+        apc_context as u32,
+        io_status_block as u32,
+        completion_filter as u32,
+        watch_tree as u32,
+        buffer as u32,
+        buffer_size as u32,
+        asynchronous as u32,
+    ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 36]",
         "push dword ptr [{params_ptr} + 32]",
         "push dword ptr [{params_ptr} + 28]",
@@ -24167,16 +28089,35 @@ pub unsafe fn nt_notify_change_key(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 40",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 44",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 40",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -24266,25 +28207,26 @@ pub unsafe fn nt_notify_change_multiple_keys(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x4BD2BCB8_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x4BD2BCB8_u32);
-    let params: [u32; 12] = unsafe {
-        [
-            master_key_handle as u32,
-            count as u32,
-            subordinate_objects as u32,
-            event as u32,
-            core::mem::transmute::<_, u32>(apc_routine),
-            apc_context as u32,
-            io_status_block as u32,
-            completion_filter as u32,
-            watch_tree as u32,
-            buffer as u32,
-            buffer_size as u32,
-            asynchronous as u32,
-        ]
-    };
+    let params: [u32; 12] = [
+        master_key_handle as u32,
+        count as u32,
+        subordinate_objects as u32,
+        event as u32,
+        core::mem::transmute::<_, u32>(apc_routine),
+        apc_context as u32,
+        io_status_block as u32,
+        completion_filter as u32,
+        watch_tree as u32,
+        buffer as u32,
+        buffer_size as u32,
+        asynchronous as u32,
+    ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 44]",
         "push dword ptr [{params_ptr} + 40]",
         "push dword ptr [{params_ptr} + 36]",
@@ -24297,16 +28239,37 @@ pub unsafe fn nt_notify_change_multiple_keys(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 48",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 52",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 44]",
+        "push dword ptr [{params_ptr} + 40]",
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 48",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -24400,7 +28363,10 @@ pub unsafe fn nt_notify_change_session(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 28]",
         "push dword ptr [{params_ptr} + 24]",
         "push dword ptr [{params_ptr} + 20]",
@@ -24409,16 +28375,33 @@ pub unsafe fn nt_notify_change_session(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 32",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 36",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 32",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -24490,27 +28473,41 @@ pub unsafe fn nt_open_cpu_partition(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x4688461B_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x4688461B_u32);
-    let params: [u32; 3] = [
-        partition_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) partition_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) partition_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -24582,27 +28579,41 @@ pub unsafe fn nt_open_directory_object(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xEA50E4DD_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xEA50E4DD_u32);
-    let params: [u32; 3] = [
-        directory_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) directory_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) directory_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -24687,22 +28698,39 @@ pub unsafe fn nt_open_enlistment(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -24774,27 +28802,41 @@ pub unsafe fn nt_open_event(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x28B2313E_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x28B2313E_u32);
-    let params: [u32; 3] = [
-        event_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) event_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) event_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -24866,27 +28908,41 @@ pub unsafe fn nt_open_event_pair(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x46D09D79_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x46D09D79_u32);
-    let params: [u32; 3] = [
-        event_pair_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) event_pair_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) event_pair_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -24974,23 +29030,41 @@ pub unsafe fn nt_open_file(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -25062,27 +29136,41 @@ pub unsafe fn nt_open_io_completion(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x028C021F_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x028C021F_u32);
-    let params: [u32; 3] = [
-        io_completion_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) io_completion_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) io_completion_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -25154,27 +29242,41 @@ pub unsafe fn nt_open_job_object(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x0E213882_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x0E213882_u32);
-    let params: [u32; 3] = [
-        job_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) job_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) job_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -25246,27 +29348,41 @@ pub unsafe fn nt_open_key(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x763667AF_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x763667AF_u32);
-    let params: [u32; 3] = [
-        key_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) key_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) key_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -25340,29 +29456,45 @@ pub unsafe fn nt_open_key_ex(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x979872E5_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x979872E5_u32);
-    let params: [u32; 4] = [
-        key_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-        open_options as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) key_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) open_options as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) key_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) open_options as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -25436,29 +29568,45 @@ pub unsafe fn nt_open_key_transacted(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x62BD3B80_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x62BD3B80_u32);
-    let params: [u32; 4] = [
-        key_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-        transaction_handle as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) key_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) transaction_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) key_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) transaction_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -25543,22 +29691,39 @@ pub unsafe fn nt_open_key_transacted_ex(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -25630,27 +29795,41 @@ pub unsafe fn nt_open_keyed_event(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x30ABF3FC_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x30ABF3FC_u32);
-    let params: [u32; 3] = [
-        keyed_event_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) keyed_event_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) keyed_event_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -25722,27 +29901,41 @@ pub unsafe fn nt_open_mutant(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x173BFF5E_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x173BFF5E_u32);
-    let params: [u32; 3] = [
-        mutant_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) mutant_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) mutant_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -25848,7 +30041,10 @@ pub unsafe fn nt_open_object_audit_alarm(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 44]",
         "push dword ptr [{params_ptr} + 40]",
         "push dword ptr [{params_ptr} + 36]",
@@ -25861,16 +30057,37 @@ pub unsafe fn nt_open_object_audit_alarm(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 48",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 52",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 44]",
+        "push dword ptr [{params_ptr} + 40]",
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 48",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -25942,27 +30159,41 @@ pub unsafe fn nt_open_partition(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x7C1C7487_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x7C1C7487_u32);
-    let params: [u32; 3] = [
-        partition_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) partition_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) partition_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -26036,29 +30267,45 @@ pub unsafe fn nt_open_private_namespace(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xFF50EDE9_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xFF50EDE9_u32);
-    let params: [u32; 4] = [
-        namespace_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-        boundary_descriptor as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) namespace_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) boundary_descriptor as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) namespace_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) boundary_descriptor as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -26132,29 +30379,45 @@ pub unsafe fn nt_open_process(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x0FAC0030_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x0FAC0030_u32);
-    let params: [u32; 4] = [
-        process_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-        client_id as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) client_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) client_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -26226,27 +30489,41 @@ pub unsafe fn nt_open_process_token(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x6F815D02_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x6F815D02_u32);
-    let params: [u32; 3] = [
-        process_handle as u32,
-        desired_access as u32,
-        token_handle as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) token_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) token_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -26320,29 +30597,45 @@ pub unsafe fn nt_open_process_token_ex(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xBA828737_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xBA828737_u32);
-    let params: [u32; 4] = [
-        process_handle as u32,
-        desired_access as u32,
-        handle_attributes as u32,
-        token_handle as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) handle_attributes as u32,
+        p3 = in(reg) token_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) handle_attributes as u32,
+        p3 = in(reg) token_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -26414,27 +30707,41 @@ pub unsafe fn nt_open_registry_transaction(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x150FD55C_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x150FD55C_u32);
-    let params: [u32; 3] = [
-        registry_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) registry_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) registry_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -26519,22 +30826,39 @@ pub unsafe fn nt_open_resource_manager(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -26606,27 +30930,41 @@ pub unsafe fn nt_open_section(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xCAE125FC_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xCAE125FC_u32);
-    let params: [u32; 3] = [
-        section_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) section_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) section_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -26698,27 +31036,41 @@ pub unsafe fn nt_open_semaphore(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x30ABE896_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x30ABE896_u32);
-    let params: [u32; 3] = [
-        semaphore_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) semaphore_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) semaphore_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -26790,27 +31142,41 @@ pub unsafe fn nt_open_session(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x49824510_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x49824510_u32);
-    let params: [u32; 3] = [
-        session_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) session_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) session_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -26882,27 +31248,41 @@ pub unsafe fn nt_open_silo_object(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x1FB4697E_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x1FB4697E_u32);
-    let params: [u32; 3] = [
-        silo_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) silo_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) silo_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -26974,27 +31354,41 @@ pub unsafe fn nt_open_symbolic_link_object(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xB62A9CB7_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xB62A9CB7_u32);
-    let params: [u32; 3] = [
-        link_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) link_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) link_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -27068,29 +31462,45 @@ pub unsafe fn nt_open_thread(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x150D9925_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x150D9925_u32);
-    let params: [u32; 4] = [
-        thread_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-        client_id as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) thread_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) client_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) thread_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+        p3 = in(reg) client_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -27164,29 +31574,45 @@ pub unsafe fn nt_open_thread_token(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x3198013A_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x3198013A_u32);
-    let params: [u32; 4] = [
-        thread_handle as u32,
-        desired_access as u32,
-        open_as_self as u32,
-        token_handle as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) thread_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) open_as_self as u32,
+        p3 = in(reg) token_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) thread_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) open_as_self as u32,
+        p3 = in(reg) token_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -27271,22 +31697,39 @@ pub unsafe fn nt_open_thread_token_ex(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -27358,27 +31801,41 @@ pub unsafe fn nt_open_timer(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xC053C0CD_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xC053C0CD_u32);
-    let params: [u32; 3] = [
-        timer_handle as u32,
-        desired_access as u32,
-        object_attributes as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) timer_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) timer_handle as u32,
+        p1 = in(reg) desired_access as u32,
+        p2 = in(reg) object_attributes as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -27463,22 +31920,39 @@ pub unsafe fn nt_open_transaction(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -27566,23 +32040,41 @@ pub unsafe fn nt_open_transaction_manager(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -27654,27 +32146,41 @@ pub unsafe fn nt_plug_play_control(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x538C4F07_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x538C4F07_u32);
-    let params: [u32; 3] = [
-        pn_p_control_class as u32,
-        pn_p_control_data as u32,
-        pn_p_control_data_length as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) pn_p_control_class as u32,
+        p1 = in(reg) pn_p_control_data as u32,
+        p2 = in(reg) pn_p_control_data_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) pn_p_control_class as u32,
+        p1 = in(reg) pn_p_control_data as u32,
+        p2 = in(reg) pn_p_control_data_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -27759,22 +32265,39 @@ pub unsafe fn nt_power_information(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -27844,22 +32367,37 @@ pub unsafe fn nt_pre_prepare_complete(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x2A57CC1C_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x2A57CC1C_u32);
-    let params: [u32; 2] = [enlistment_handle as u32, tm_virtual_clock as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) enlistment_handle as u32,
+        p1 = in(reg) tm_virtual_clock as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) enlistment_handle as u32,
+        p1 = in(reg) tm_virtual_clock as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -27929,22 +32467,37 @@ pub unsafe fn nt_pre_prepare_enlistment(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x19413CD3_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x19413CD3_u32);
-    let params: [u32; 2] = [enlistment_handle as u32, tm_virtual_clock as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) enlistment_handle as u32,
+        p1 = in(reg) tm_virtual_clock as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) enlistment_handle as u32,
+        p1 = in(reg) tm_virtual_clock as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -28014,22 +32567,37 @@ pub unsafe fn nt_prepare_complete(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x08B7E2F8_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x08B7E2F8_u32);
-    let params: [u32; 2] = [enlistment_handle as u32, tm_virtual_clock as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) enlistment_handle as u32,
+        p1 = in(reg) tm_virtual_clock as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) enlistment_handle as u32,
+        p1 = in(reg) tm_virtual_clock as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -28099,22 +32667,37 @@ pub unsafe fn nt_prepare_enlistment(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xD450E9FA_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xD450E9FA_u32);
-    let params: [u32; 2] = [enlistment_handle as u32, tm_virtual_clock as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) enlistment_handle as u32,
+        p1 = in(reg) tm_virtual_clock as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) enlistment_handle as u32,
+        p1 = in(reg) tm_virtual_clock as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -28186,27 +32769,41 @@ pub unsafe fn nt_privilege_check(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xA5077E4B_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xA5077E4B_u32);
-    let params: [u32; 3] = [
-        client_token as u32,
-        required_privileges as u32,
-        result as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) client_token as u32,
+        p1 = in(reg) required_privileges as u32,
+        p2 = in(reg) result as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) client_token as u32,
+        p1 = in(reg) required_privileges as u32,
+        p2 = in(reg) result as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -28294,23 +32891,41 @@ pub unsafe fn nt_privilege_object_audit_alarm(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -28395,22 +33010,39 @@ pub unsafe fn nt_privileged_service_audit_alarm(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -28484,29 +33116,45 @@ pub unsafe fn nt_propagation_complete(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x069E4E54_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x069E4E54_u32);
-    let params: [u32; 4] = [
-        resource_manager_handle as u32,
-        request_cookie as u32,
-        buffer_length as u32,
-        buffer as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) resource_manager_handle as u32,
+        p1 = in(reg) request_cookie as u32,
+        p2 = in(reg) buffer_length as u32,
+        p3 = in(reg) buffer as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) resource_manager_handle as u32,
+        p1 = in(reg) request_cookie as u32,
+        p2 = in(reg) buffer_length as u32,
+        p3 = in(reg) buffer as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -28578,27 +33226,41 @@ pub unsafe fn nt_propagation_failed(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x2096B3A9_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x2096B3A9_u32);
-    let params: [u32; 3] = [
-        resource_manager_handle as u32,
-        request_cookie as u32,
-        prop_status as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) resource_manager_handle as u32,
+        p1 = in(reg) request_cookie as u32,
+        p2 = in(reg) prop_status as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) resource_manager_handle as u32,
+        p1 = in(reg) request_cookie as u32,
+        p2 = in(reg) prop_status as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -28683,22 +33345,39 @@ pub unsafe fn nt_protect_virtual_memory(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -28783,22 +33462,39 @@ pub unsafe fn nt_pss_capture_va_space_bulk(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -28864,18 +33560,26 @@ pub unsafe fn nt_pull_transaction() -> NTSTATUS {
     let syscall_addr = sw3_get_random_syscall_address(0xD649D6DB_u32);
     let status: i32;
 
-    core::arch::asm!(
-
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 0",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 4",
+            gate = in(reg) wow64_gate as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+            "mov edx, esp",
+            "call {addr}",
+            addr = in(reg) syscall_addr as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -28942,22 +33646,37 @@ pub unsafe extern "C" fn nt_pulse_event(
 pub unsafe fn nt_pulse_event(event_handle: HANDLE, previous_state: *mut ULONG) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x26012393_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x26012393_u32);
-    let params: [u32; 2] = [event_handle as u32, previous_state as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) event_handle as u32,
+        p1 = in(reg) previous_state as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) event_handle as u32,
+        p1 = in(reg) previous_state as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -29027,22 +33746,37 @@ pub unsafe fn nt_query_attributes_file(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x7A394EE6_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x7A394EE6_u32);
-    let params: [u32; 2] = [object_attributes as u32, file_information as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) object_attributes as u32,
+        p1 = in(reg) file_information as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) object_attributes as u32,
+        p1 = in(reg) file_information as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -29110,21 +33844,33 @@ pub unsafe fn nt_query_auxiliary_counter_frequency(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x0ADF316C_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x0ADF316C_u32);
-    let params: [u32; 1] = [lp_auxiliary_counter_frequency as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) lp_auxiliary_counter_frequency as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) lp_auxiliary_counter_frequency as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -29188,22 +33934,37 @@ pub unsafe extern "C" fn nt_query_boot_entry_order(ids: *mut ULONG, count: *mut 
 pub unsafe fn nt_query_boot_entry_order(ids: *mut ULONG, count: *mut ULONG) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x2F13F739_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x2F13F739_u32);
-    let params: [u32; 2] = [ids as u32, count as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) ids as u32,
+        p1 = in(reg) count as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) ids as u32,
+        p1 = in(reg) count as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -29273,22 +34034,37 @@ pub unsafe fn nt_query_boot_options(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xF49FE53D_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xF49FE53D_u32);
-    let params: [u32; 2] = [boot_options as u32, boot_options_length as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) boot_options as u32,
+        p1 = in(reg) boot_options_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) boot_options as u32,
+        p1 = in(reg) boot_options_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -29355,22 +34131,37 @@ pub unsafe extern "C" fn nt_query_debug_filter_state(
 pub unsafe fn nt_query_debug_filter_state(component_id: ULONG, level: ULONG) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xB23C6A02_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xB23C6A02_u32);
-    let params: [u32; 2] = [component_id as u32, level as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) component_id as u32,
+        p1 = in(reg) level as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) component_id as u32,
+        p1 = in(reg) level as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -29440,22 +34231,37 @@ pub unsafe fn nt_query_default_locale(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x86258EB3_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x86258EB3_u32);
-    let params: [u32; 2] = [user_profile as u32, default_locale_id as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) user_profile as u32,
+        p1 = in(reg) default_locale_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) user_profile as u32,
+        p1 = in(reg) default_locale_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -29521,21 +34327,33 @@ pub unsafe extern "C" fn nt_query_default_ui_language(
 pub unsafe fn nt_query_default_ui_language(default_ui_language_id: *mut LANGID) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x0D8F5E32_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x0D8F5E32_u32);
-    let params: [u32; 1] = [default_ui_language_id as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) default_ui_language_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) default_ui_language_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -29623,24 +34441,25 @@ pub unsafe fn nt_query_directory_file(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x23E575D6_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x23E575D6_u32);
-    let params: [u32; 11] = unsafe {
-        [
-            file_handle as u32,
-            event as u32,
-            core::mem::transmute::<_, u32>(apc_routine),
-            apc_context as u32,
-            io_status_block as u32,
-            file_information as u32,
-            length as u32,
-            file_information_class as u32,
-            return_single_entry as u32,
-            file_name as u32,
-            restart_scan as u32,
-        ]
-    };
+    let params: [u32; 11] = [
+        file_handle as u32,
+        event as u32,
+        core::mem::transmute::<_, u32>(apc_routine),
+        apc_context as u32,
+        io_status_block as u32,
+        file_information as u32,
+        length as u32,
+        file_information_class as u32,
+        return_single_entry as u32,
+        file_name as u32,
+        restart_scan as u32,
+    ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 40]",
         "push dword ptr [{params_ptr} + 36]",
         "push dword ptr [{params_ptr} + 32]",
@@ -29652,16 +34471,36 @@ pub unsafe fn nt_query_directory_file(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 44",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 48",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 40]",
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 44",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -29747,23 +34586,24 @@ pub unsafe fn nt_query_directory_file_ex(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x2034228D_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x2034228D_u32);
-    let params: [u32; 10] = unsafe {
-        [
-            file_handle as u32,
-            event as u32,
-            core::mem::transmute::<_, u32>(apc_routine),
-            apc_context as u32,
-            io_status_block as u32,
-            file_information as u32,
-            length as u32,
-            file_information_class as u32,
-            query_flags as u32,
-            file_name as u32,
-        ]
-    };
+    let params: [u32; 10] = [
+        file_handle as u32,
+        event as u32,
+        core::mem::transmute::<_, u32>(apc_routine),
+        apc_context as u32,
+        io_status_block as u32,
+        file_information as u32,
+        length as u32,
+        file_information_class as u32,
+        query_flags as u32,
+        file_name as u32,
+    ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 36]",
         "push dword ptr [{params_ptr} + 32]",
         "push dword ptr [{params_ptr} + 28]",
@@ -29774,16 +34614,35 @@ pub unsafe fn nt_query_directory_file_ex(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 40",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 44",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 36]",
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 40",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -29874,7 +34733,10 @@ pub unsafe fn nt_query_directory_object(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 24]",
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
@@ -29882,16 +34744,32 @@ pub unsafe fn nt_query_directory_object(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 28",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 32",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 28",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -29958,22 +34836,37 @@ pub unsafe extern "C" fn nt_query_driver_entry_order(
 pub unsafe fn nt_query_driver_entry_order(ids: *mut ULONG, count: *mut ULONG) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xCFCDDD41_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xCFCDDD41_u32);
-    let params: [u32; 2] = [ids as u32, count as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) ids as u32,
+        p1 = in(reg) count as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) ids as u32,
+        p1 = in(reg) count as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -30070,7 +34963,10 @@ pub unsafe fn nt_query_ea_file(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 32]",
         "push dword ptr [{params_ptr} + 28]",
         "push dword ptr [{params_ptr} + 24]",
@@ -30080,16 +34976,34 @@ pub unsafe fn nt_query_ea_file(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 36",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 40",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 36",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -30174,22 +35088,39 @@ pub unsafe fn nt_query_event(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -30259,22 +35190,37 @@ pub unsafe fn nt_query_full_attributes_file(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x6DB94169_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x6DB94169_u32);
-    let params: [u32; 2] = [object_attributes as u32, file_information as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) object_attributes as u32,
+        p1 = in(reg) file_information as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) object_attributes as u32,
+        p1 = in(reg) file_information as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -30359,22 +35305,39 @@ pub unsafe fn nt_query_information_atom(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -30459,22 +35422,39 @@ pub unsafe fn nt_query_information_by_name(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -30559,22 +35539,39 @@ pub unsafe fn nt_query_information_cpu_partition(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -30659,22 +35656,39 @@ pub unsafe fn nt_query_information_enlistment(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -30759,22 +35773,39 @@ pub unsafe fn nt_query_information_file(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -30859,22 +35890,39 @@ pub unsafe fn nt_query_information_job_object(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -30959,22 +36007,39 @@ pub unsafe fn nt_query_information_port(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -31059,22 +36124,39 @@ pub unsafe fn nt_query_information_process(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -31159,22 +36241,39 @@ pub unsafe fn nt_query_information_resource_manager(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -31259,22 +36358,39 @@ pub unsafe fn nt_query_information_silo_object(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -31359,22 +36475,39 @@ pub unsafe fn nt_query_information_thread(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -31459,22 +36592,39 @@ pub unsafe fn nt_query_information_token(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -31559,22 +36709,39 @@ pub unsafe fn nt_query_information_transaction(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -31659,22 +36826,39 @@ pub unsafe fn nt_query_information_transaction_manager(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -31759,22 +36943,39 @@ pub unsafe fn nt_query_information_worker_factory(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -31840,21 +37041,33 @@ pub unsafe extern "C" fn nt_query_install_ui_language(
 pub unsafe fn nt_query_install_ui_language(install_ui_language_id: *mut LANGID) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x24BAD02B_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x24BAD02B_u32);
-    let params: [u32; 1] = [install_ui_language_id as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) install_ui_language_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) install_ui_language_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -31921,22 +37134,37 @@ pub unsafe extern "C" fn nt_query_interval_profile(
 pub unsafe fn nt_query_interval_profile(profile_source: u32, interval: *mut ULONG) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x349A4C58_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x349A4C58_u32);
-    let params: [u32; 2] = [profile_source as u32, interval as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) profile_source as u32,
+        p1 = in(reg) interval as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) profile_source as u32,
+        p1 = in(reg) interval as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -32021,22 +37249,39 @@ pub unsafe fn nt_query_io_completion(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -32106,22 +37351,37 @@ pub unsafe fn nt_query_io_ring_capabilities(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x368E4573_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x368E4573_u32);
-    let params: [u32; 2] = [capabilities as u32, capabilities_length as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) capabilities as u32,
+        p1 = in(reg) capabilities_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) capabilities as u32,
+        p1 = in(reg) capabilities_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -32206,22 +37466,39 @@ pub unsafe fn nt_query_key(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -32306,22 +37583,39 @@ pub unsafe fn nt_query_license_value(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -32409,23 +37703,41 @@ pub unsafe fn nt_query_multiple_value_key(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -32510,22 +37822,39 @@ pub unsafe fn nt_query_mutant(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -32610,22 +37939,39 @@ pub unsafe fn nt_query_object(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -32695,22 +38041,37 @@ pub unsafe fn nt_query_open_sub_keys(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x2A903911_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x2A903911_u32);
-    let params: [u32; 2] = [target_key as u32, handle_count as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) target_key as u32,
+        p1 = in(reg) handle_count as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) target_key as u32,
+        p1 = in(reg) handle_count as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -32784,29 +38145,45 @@ pub unsafe fn nt_query_open_sub_keys_ex(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xE980CD3C_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xE980CD3C_u32);
-    let params: [u32; 4] = [
-        target_key as u32,
-        buffer_length as u32,
-        buffer as u32,
-        required_size as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) target_key as u32,
+        p1 = in(reg) buffer_length as u32,
+        p2 = in(reg) buffer as u32,
+        p3 = in(reg) required_size as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) target_key as u32,
+        p1 = in(reg) buffer_length as u32,
+        p2 = in(reg) buffer as u32,
+        p3 = in(reg) required_size as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -32876,22 +38253,37 @@ pub unsafe fn nt_query_performance_counter(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x3BADC5C1_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x3BADC5C1_u32);
-    let params: [u32; 2] = [performance_counter as u32, performance_frequency as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) performance_counter as u32,
+        p1 = in(reg) performance_frequency as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) performance_counter as u32,
+        p1 = in(reg) performance_frequency as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -32957,18 +38349,26 @@ pub unsafe fn nt_query_port_information_process() -> NTSTATUS {
     let syscall_addr = sw3_get_random_syscall_address(0x01BF1A30_u32);
     let status: i32;
 
-    core::arch::asm!(
-
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 0",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 4",
+            gate = in(reg) wow64_gate as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+            "mov edx, esp",
+            "call {addr}",
+            addr = in(reg) syscall_addr as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -33065,7 +38465,10 @@ pub unsafe fn nt_query_quota_information_file(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 32]",
         "push dword ptr [{params_ptr} + 28]",
         "push dword ptr [{params_ptr} + 24]",
@@ -33075,16 +38478,34 @@ pub unsafe fn nt_query_quota_information_file(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 36",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 40",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 36",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -33169,22 +38590,39 @@ pub unsafe fn nt_query_section(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -33272,23 +38710,41 @@ pub unsafe fn nt_query_security_attributes_token(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -33373,22 +38829,39 @@ pub unsafe fn nt_query_security_object(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -33476,23 +38949,41 @@ pub unsafe fn nt_query_security_policy(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -33577,22 +39068,39 @@ pub unsafe fn nt_query_semaphore(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -33664,27 +39172,41 @@ pub unsafe fn nt_query_symbolic_link_object(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x8A36A49B_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x8A36A49B_u32);
-    let params: [u32; 3] = [
-        link_handle as u32,
-        link_target as u32,
-        returned_length as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) link_handle as u32,
+        p1 = in(reg) link_target as u32,
+        p2 = in(reg) returned_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) link_handle as u32,
+        p1 = in(reg) link_target as u32,
+        p2 = in(reg) returned_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -33758,29 +39280,45 @@ pub unsafe fn nt_query_system_environment_value(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xE7219CF1_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xE7219CF1_u32);
-    let params: [u32; 4] = [
-        variable_name as u32,
-        variable_value as u32,
-        value_length as u32,
-        return_length as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) variable_name as u32,
+        p1 = in(reg) variable_value as u32,
+        p2 = in(reg) value_length as u32,
+        p3 = in(reg) return_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) variable_name as u32,
+        p1 = in(reg) variable_value as u32,
+        p2 = in(reg) value_length as u32,
+        p3 = in(reg) return_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -33865,22 +39403,39 @@ pub unsafe fn nt_query_system_environment_value_ex(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -33954,29 +39509,45 @@ pub unsafe fn nt_query_system_information(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x5ECC7D99_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x5ECC7D99_u32);
-    let params: [u32; 4] = [
-        system_information_class as u32,
-        system_information as u32,
-        system_information_length as u32,
-        return_length as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) system_information_class as u32,
+        p1 = in(reg) system_information as u32,
+        p2 = in(reg) system_information_length as u32,
+        p3 = in(reg) return_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) system_information_class as u32,
+        p1 = in(reg) system_information as u32,
+        p2 = in(reg) system_information_length as u32,
+        p3 = in(reg) return_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -34064,23 +39635,41 @@ pub unsafe fn nt_query_system_information_ex(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -34144,21 +39733,33 @@ pub unsafe extern "C" fn nt_query_system_time(system_time: *mut LARGE_INTEGER) -
 pub unsafe fn nt_query_system_time(system_time: *mut LARGE_INTEGER) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x0CAB757F_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x0CAB757F_u32);
-    let params: [u32; 1] = [system_time as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) system_time as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) system_time as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -34243,22 +39844,39 @@ pub unsafe fn nt_query_timer(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -34330,27 +39948,41 @@ pub unsafe fn nt_query_timer_resolution(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x34ABF405_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x34ABF405_u32);
-    let params: [u32; 3] = [
-        maximum_time as u32,
-        minimum_time as u32,
-        current_time as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) maximum_time as u32,
+        p1 = in(reg) minimum_time as u32,
+        p2 = in(reg) current_time as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) maximum_time as u32,
+        p1 = in(reg) minimum_time as u32,
+        p2 = in(reg) current_time as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -34438,23 +40070,41 @@ pub unsafe fn nt_query_value_key(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -34542,23 +40192,41 @@ pub unsafe fn nt_query_virtual_memory(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -34643,22 +40311,39 @@ pub unsafe fn nt_query_volume_information_file(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -34746,23 +40431,41 @@ pub unsafe fn nt_query_wnf_state_data(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -34847,22 +40550,39 @@ pub unsafe fn nt_query_wnf_state_name_information(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -34938,33 +40658,48 @@ pub unsafe fn nt_queue_apc_thread(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xB28D6F34_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xB28D6F34_u32);
-    let params: [u32; 5] = unsafe {
-        [
-            thread_handle as u32,
-            core::mem::transmute::<_, u32>(apc_routine),
-            apc_argument1 as u32,
-            apc_argument2 as u32,
-            apc_argument3 as u32,
-        ]
-    };
+    let params: [u32; 5] = [
+        thread_handle as u32,
+        core::mem::transmute::<_, u32>(apc_routine),
+        apc_argument1 as u32,
+        apc_argument2 as u32,
+        apc_argument3 as u32,
+    ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -35042,35 +40777,51 @@ pub unsafe fn nt_queue_apc_thread_ex(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x45B888EC_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x45B888EC_u32);
-    let params: [u32; 6] = unsafe {
-        [
-            thread_handle as u32,
-            user_apc_reserve_handle as u32,
-            core::mem::transmute::<_, u32>(apc_routine),
-            apc_argument1 as u32,
-            apc_argument2 as u32,
-            apc_argument3 as u32,
-        ]
-    };
+    let params: [u32; 6] = [
+        thread_handle as u32,
+        user_apc_reserve_handle as u32,
+        core::mem::transmute::<_, u32>(apc_routine),
+        apc_argument1 as u32,
+        apc_argument2 as u32,
+        apc_argument3 as u32,
+    ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -35161,7 +40912,10 @@ pub unsafe fn nt_queue_apc_thread_ex2(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 24]",
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
@@ -35169,16 +40923,32 @@ pub unsafe fn nt_queue_apc_thread_ex2(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 28",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 32",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 28",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -35250,27 +41020,41 @@ pub unsafe fn nt_raise_exception(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x9ECA6349_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x9ECA6349_u32);
-    let params: [u32; 3] = [
-        exception_record as u32,
-        context_record as u32,
-        first_chance as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) exception_record as u32,
+        p1 = in(reg) context_record as u32,
+        p2 = in(reg) first_chance as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) exception_record as u32,
+        p1 = in(reg) context_record as u32,
+        p2 = in(reg) first_chance as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -35358,23 +41142,41 @@ pub unsafe fn nt_raise_hard_error(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -35458,22 +41260,23 @@ pub unsafe fn nt_read_file(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x0FB1DE07_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x0FB1DE07_u32);
-    let params: [u32; 9] = unsafe {
-        [
-            file_handle as u32,
-            event as u32,
-            core::mem::transmute::<_, u32>(apc_routine),
-            apc_context as u32,
-            io_status_block as u32,
-            buffer as u32,
-            length as u32,
-            byte_offset as u32,
-            key as u32,
-        ]
-    };
+    let params: [u32; 9] = [
+        file_handle as u32,
+        event as u32,
+        core::mem::transmute::<_, u32>(apc_routine),
+        apc_context as u32,
+        io_status_block as u32,
+        buffer as u32,
+        length as u32,
+        byte_offset as u32,
+        key as u32,
+    ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 32]",
         "push dword ptr [{params_ptr} + 28]",
         "push dword ptr [{params_ptr} + 24]",
@@ -35483,16 +41286,34 @@ pub unsafe fn nt_read_file(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 36",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 40",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 36",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -35576,22 +41397,23 @@ pub unsafe fn nt_read_file_scatter(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x318C2B01_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x318C2B01_u32);
-    let params: [u32; 9] = unsafe {
-        [
-            file_handle as u32,
-            event as u32,
-            core::mem::transmute::<_, u32>(apc_routine),
-            apc_context as u32,
-            io_status_block as u32,
-            segment_array as u32,
-            length as u32,
-            byte_offset as u32,
-            key as u32,
-        ]
-    };
+    let params: [u32; 9] = [
+        file_handle as u32,
+        event as u32,
+        core::mem::transmute::<_, u32>(apc_routine),
+        apc_context as u32,
+        io_status_block as u32,
+        segment_array as u32,
+        length as u32,
+        byte_offset as u32,
+        key as u32,
+    ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 32]",
         "push dword ptr [{params_ptr} + 28]",
         "push dword ptr [{params_ptr} + 24]",
@@ -35601,16 +41423,34 @@ pub unsafe fn nt_read_file_scatter(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 36",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 40",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 36",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -35680,22 +41520,37 @@ pub unsafe fn nt_read_only_enlistment(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x7DC31C55_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x7DC31C55_u32);
-    let params: [u32; 2] = [enlistment_handle as u32, tm_virtual_clock as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) enlistment_handle as u32,
+        p1 = in(reg) tm_virtual_clock as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) enlistment_handle as u32,
+        p1 = in(reg) tm_virtual_clock as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -35783,23 +41638,41 @@ pub unsafe fn nt_read_request_data(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -35884,22 +41757,39 @@ pub unsafe fn nt_read_virtual_memory(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -35987,23 +41877,41 @@ pub unsafe fn nt_read_virtual_memory_ex(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -36070,22 +41978,37 @@ pub unsafe extern "C" fn nt_recover_enlistment(
 pub unsafe fn nt_recover_enlistment(enlistment_handle: HANDLE, enlistment_key: PVOID) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xF9651EFE_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xF9651EFE_u32);
-    let params: [u32; 2] = [enlistment_handle as u32, enlistment_key as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) enlistment_handle as u32,
+        p1 = in(reg) enlistment_key as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) enlistment_handle as u32,
+        p1 = in(reg) enlistment_key as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -36149,21 +42072,33 @@ pub unsafe extern "C" fn nt_recover_resource_manager(resource_manager_handle: HA
 pub unsafe fn nt_recover_resource_manager(resource_manager_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x190B33C8_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x190B33C8_u32);
-    let params: [u32; 1] = [resource_manager_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) resource_manager_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) resource_manager_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -36229,21 +42164,33 @@ pub unsafe extern "C" fn nt_recover_transaction_manager(
 pub unsafe fn nt_recover_transaction_manager(transaction_manager_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x8B349598_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x8B349598_u32);
-    let params: [u32; 1] = [transaction_manager_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) transaction_manager_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) transaction_manager_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -36328,22 +42275,39 @@ pub unsafe fn nt_register_protocol_address_information(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -36407,21 +42371,33 @@ pub unsafe extern "C" fn nt_register_thread_terminate_port(port_handle: HANDLE) 
 pub unsafe fn nt_register_thread_terminate_port(port_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x6AFF8766_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x6AFF8766_u32);
-    let params: [u32; 1] = [port_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) port_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) port_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -36487,18 +42463,26 @@ pub unsafe fn nt_release_cmf_view_ownership() -> NTSTATUS {
     let syscall_addr = sw3_get_random_syscall_address(0x6E5475FF_u32);
     let status: i32;
 
-    core::arch::asm!(
-
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 0",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 4",
+            gate = in(reg) wow64_gate as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+            "mov edx, esp",
+            "call {addr}",
+            addr = in(reg) syscall_addr as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -36572,29 +42556,45 @@ pub unsafe fn nt_release_keyed_event(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xE8A90ADF_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xE8A90ADF_u32);
-    let params: [u32; 4] = [
-        keyed_event_handle as u32,
-        key_value as u32,
-        alertable as u32,
-        timeout as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) keyed_event_handle as u32,
+        p1 = in(reg) key_value as u32,
+        p2 = in(reg) alertable as u32,
+        p3 = in(reg) timeout as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) keyed_event_handle as u32,
+        p1 = in(reg) key_value as u32,
+        p2 = in(reg) alertable as u32,
+        p3 = in(reg) timeout as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -36661,22 +42661,37 @@ pub unsafe extern "C" fn nt_release_mutant(
 pub unsafe fn nt_release_mutant(mutant_handle: HANDLE, previous_count: *mut ULONG) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x06983D2E_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x06983D2E_u32);
-    let params: [u32; 2] = [mutant_handle as u32, previous_count as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) mutant_handle as u32,
+        p1 = in(reg) previous_count as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) mutant_handle as u32,
+        p1 = in(reg) previous_count as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -36748,27 +42763,41 @@ pub unsafe fn nt_release_semaphore(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x3CA80630_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x3CA80630_u32);
-    let params: [u32; 3] = [
-        semaphore_handle as u32,
-        release_count as u32,
-        previous_count as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) semaphore_handle as u32,
+        p1 = in(reg) release_count as u32,
+        p2 = in(reg) previous_count as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) semaphore_handle as u32,
+        p1 = in(reg) release_count as u32,
+        p2 = in(reg) previous_count as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -36834,21 +42863,33 @@ pub unsafe extern "C" fn nt_release_worker_factory_worker(
 pub unsafe fn nt_release_worker_factory_worker(worker_factory_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x0AA07267_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x0AA07267_u32);
-    let params: [u32; 1] = [worker_factory_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) worker_factory_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) worker_factory_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -36933,22 +42974,39 @@ pub unsafe fn nt_remove_io_completion(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -37036,23 +43094,41 @@ pub unsafe fn nt_remove_io_completion_ex(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -37122,22 +43198,37 @@ pub unsafe fn nt_remove_process_debug(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x48B1BEFE_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x48B1BEFE_u32);
-    let params: [u32; 2] = [process_handle as u32, debug_object_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) debug_object_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) debug_object_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -37201,22 +43292,37 @@ pub unsafe extern "C" fn nt_rename_key(key_handle: HANDLE, new_name: PUNICODE_ST
 pub unsafe fn nt_rename_key(key_handle: HANDLE, new_name: PUNICODE_STRING) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xCBAED032_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xCBAED032_u32);
-    let params: [u32; 2] = [key_handle as u32, new_name as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) key_handle as u32,
+        p1 = in(reg) new_name as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) key_handle as u32,
+        p1 = in(reg) new_name as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -37286,25 +43392,37 @@ pub unsafe fn nt_rename_transaction_manager(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x05A19C8A_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x05A19C8A_u32);
-    let params: [u32; 2] = [
-        log_file_name as u32,
-        existing_transaction_manager_guid as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) log_file_name as u32,
+        p1 = in(reg) existing_transaction_manager_guid as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) log_file_name as u32,
+        p1 = in(reg) existing_transaction_manager_guid as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -37376,23 +43494,41 @@ pub unsafe fn nt_replace_key(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x6DDDB28B_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x6DDDB28B_u32);
-    let params: [u32; 3] = [new_file as u32, target_handle as u32, old_file as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) new_file as u32,
+        p1 = in(reg) target_handle as u32,
+        p2 = in(reg) old_file as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) new_file as u32,
+        p1 = in(reg) target_handle as u32,
+        p2 = in(reg) old_file as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -37464,27 +43600,41 @@ pub unsafe fn nt_replace_partition_unit(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xD470E8D8_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xD470E8D8_u32);
-    let params: [u32; 3] = [
-        target_instance_path as u32,
-        spare_instance_path as u32,
-        flags as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) target_instance_path as u32,
+        p1 = in(reg) spare_instance_path as u32,
+        p2 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) target_instance_path as u32,
+        p1 = in(reg) spare_instance_path as u32,
+        p2 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -37551,22 +43701,37 @@ pub unsafe extern "C" fn nt_reply_port(
 pub unsafe fn nt_reply_port(port_handle: HANDLE, reply_message: PPORT_MESSAGE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x2AB41B18_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x2AB41B18_u32);
-    let params: [u32; 2] = [port_handle as u32, reply_message as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) reply_message as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) reply_message as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -37640,29 +43805,45 @@ pub unsafe fn nt_reply_wait_receive_port(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x26B40F2E_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x26B40F2E_u32);
-    let params: [u32; 4] = [
-        port_handle as u32,
-        port_context as u32,
-        reply_message as u32,
-        receive_message as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) port_context as u32,
+        p2 = in(reg) reply_message as u32,
+        p3 = in(reg) receive_message as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) port_context as u32,
+        p2 = in(reg) reply_message as u32,
+        p3 = in(reg) receive_message as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -37747,22 +43928,39 @@ pub unsafe fn nt_reply_wait_receive_port_ex(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -37832,22 +44030,37 @@ pub unsafe fn nt_reply_wait_reply_port(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xDAB5DF25_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xDAB5DF25_u32);
-    let params: [u32; 2] = [port_handle as u32, reply_message as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) reply_message as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) reply_message as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -37911,21 +44124,33 @@ pub unsafe extern "C" fn nt_request_device_wakeup(device_handle: HANDLE) -> NTST
 pub unsafe fn nt_request_device_wakeup(device_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x9F25A268_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x9F25A268_u32);
-    let params: [u32; 1] = [device_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) device_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) device_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -37992,22 +44217,37 @@ pub unsafe extern "C" fn nt_request_port(
 pub unsafe fn nt_request_port(port_handle: HANDLE, request_message: PPORT_MESSAGE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xA130A8B5_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xA130A8B5_u32);
-    let params: [u32; 2] = [port_handle as u32, request_message as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) request_message as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) request_message as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -38079,27 +44319,41 @@ pub unsafe fn nt_request_wait_reply_port(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x32B52B38_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x32B52B38_u32);
-    let params: [u32; 3] = [
-        port_handle as u32,
-        request_message as u32,
-        reply_message as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) request_message as u32,
+        p2 = in(reg) reply_message as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) port_handle as u32,
+        p1 = in(reg) request_message as u32,
+        p2 = in(reg) reply_message as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -38163,21 +44417,33 @@ pub unsafe extern "C" fn nt_request_wakeup_latency(latency_time: ULONG) -> NTSTA
 pub unsafe fn nt_request_wakeup_latency(latency_time: ULONG) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x02AA3D0E_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x02AA3D0E_u32);
-    let params: [u32; 1] = [latency_time as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) latency_time as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) latency_time as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -38244,22 +44510,37 @@ pub unsafe extern "C" fn nt_reset_event(
 pub unsafe fn nt_reset_event(event_handle: HANDLE, previous_state: *mut ULONG) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x10F07518_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x10F07518_u32);
-    let params: [u32; 2] = [event_handle as u32, previous_state as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) event_handle as u32,
+        p1 = in(reg) previous_state as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) event_handle as u32,
+        p1 = in(reg) previous_state as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -38331,27 +44612,41 @@ pub unsafe fn nt_reset_write_watch(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xF4991104_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xF4991104_u32);
-    let params: [u32; 3] = [
-        process_handle as u32,
-        base_address as u32,
-        region_size as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) base_address as u32,
+        p2 = in(reg) region_size as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) base_address as u32,
+        p2 = in(reg) region_size as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -38419,23 +44714,41 @@ pub unsafe extern "C" fn nt_restore_key(
 pub unsafe fn nt_restore_key(key_handle: HANDLE, file_handle: HANDLE, flags: ULONG) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x15AEF6C4_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x15AEF6C4_u32);
-    let params: [u32; 3] = [key_handle as u32, file_handle as u32, flags as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) key_handle as u32,
+        p1 = in(reg) file_handle as u32,
+        p2 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) key_handle as u32,
+        p1 = in(reg) file_handle as u32,
+        p2 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -38499,21 +44812,33 @@ pub unsafe extern "C" fn nt_resume_process(process_handle: HANDLE) -> NTSTATUS {
 pub unsafe fn nt_resume_process(process_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xE1BCD810_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xE1BCD810_u32);
-    let params: [u32; 1] = [process_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) process_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) process_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -38583,22 +44908,37 @@ pub unsafe fn nt_resume_thread(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x93300A16_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x93300A16_u32);
-    let params: [u32; 2] = [thread_handle as u32, previous_suspend_count as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) thread_handle as u32,
+        p1 = in(reg) previous_suspend_count as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) thread_handle as u32,
+        p1 = in(reg) previous_suspend_count as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -38664,18 +45004,26 @@ pub unsafe fn nt_revert_container_impersonation() -> NTSTATUS {
     let syscall_addr = sw3_get_random_syscall_address(0x1E803E13_u32);
     let status: i32;
 
-    core::arch::asm!(
-
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 0",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 4",
+            gate = in(reg) wow64_gate as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+            "mov edx, esp",
+            "call {addr}",
+            addr = in(reg) syscall_addr as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -38745,22 +45093,37 @@ pub unsafe fn nt_rollback_complete(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x2D5101D8_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x2D5101D8_u32);
-    let params: [u32; 2] = [enlistment_handle as u32, tm_virtual_clock as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) enlistment_handle as u32,
+        p1 = in(reg) tm_virtual_clock as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) enlistment_handle as u32,
+        p1 = in(reg) tm_virtual_clock as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -38830,22 +45193,37 @@ pub unsafe fn nt_rollback_enlistment(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xABA6AC2D_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xABA6AC2D_u32);
-    let params: [u32; 2] = [enlistment_handle as u32, tm_virtual_clock as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) enlistment_handle as u32,
+        p1 = in(reg) tm_virtual_clock as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) enlistment_handle as u32,
+        p1 = in(reg) tm_virtual_clock as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -38912,22 +45290,37 @@ pub unsafe extern "C" fn nt_rollback_registry_transaction(
 pub unsafe fn nt_rollback_registry_transaction(registry_handle: HANDLE, wait: BOOL) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xE44FA29F_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xE44FA29F_u32);
-    let params: [u32; 2] = [registry_handle as u32, wait as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) registry_handle as u32,
+        p1 = in(reg) wait as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) registry_handle as u32,
+        p1 = in(reg) wait as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -38997,22 +45390,37 @@ pub unsafe fn nt_rollback_savepoint_transaction(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x1650C91C_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x1650C91C_u32);
-    let params: [u32; 2] = [transaction_handle as u32, save_point_id as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) transaction_handle as u32,
+        p1 = in(reg) save_point_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) transaction_handle as u32,
+        p1 = in(reg) save_point_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -39079,22 +45487,37 @@ pub unsafe extern "C" fn nt_rollback_transaction(
 pub unsafe fn nt_rollback_transaction(transaction_handle: HANDLE, wait: BOOLEAN) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xF3A7D1F3_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xF3A7D1F3_u32);
-    let params: [u32; 2] = [transaction_handle as u32, wait as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) transaction_handle as u32,
+        p1 = in(reg) wait as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) transaction_handle as u32,
+        p1 = in(reg) wait as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -39164,22 +45587,37 @@ pub unsafe fn nt_rollforward_transaction_manager(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xE33CEDA0_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xE33CEDA0_u32);
-    let params: [u32; 2] = [transaction_manager_handle as u32, tm_virtual_clock as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) transaction_manager_handle as u32,
+        p1 = in(reg) tm_virtual_clock as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) transaction_manager_handle as u32,
+        p1 = in(reg) tm_virtual_clock as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -39243,22 +45681,37 @@ pub unsafe extern "C" fn nt_save_key(key_handle: HANDLE, file_handle: HANDLE) ->
 pub unsafe fn nt_save_key(key_handle: HANDLE, file_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x6E2E9A54_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x6E2E9A54_u32);
-    let params: [u32; 2] = [key_handle as u32, file_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) key_handle as u32,
+        p1 = in(reg) file_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) key_handle as u32,
+        p1 = in(reg) file_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -39326,23 +45779,41 @@ pub unsafe extern "C" fn nt_save_key_ex(
 pub unsafe fn nt_save_key_ex(key_handle: HANDLE, file_handle: HANDLE, format: ULONG) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xF27AB0A1_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xF27AB0A1_u32);
-    let params: [u32; 3] = [key_handle as u32, file_handle as u32, format as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) key_handle as u32,
+        p1 = in(reg) file_handle as u32,
+        p2 = in(reg) format as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) key_handle as u32,
+        p1 = in(reg) file_handle as u32,
+        p2 = in(reg) format as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -39414,27 +45885,41 @@ pub unsafe fn nt_save_merged_keys(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x09B13E36_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x09B13E36_u32);
-    let params: [u32; 3] = [
-        high_precedence_key_handle as u32,
-        low_precedence_key_handle as u32,
-        file_handle as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) high_precedence_key_handle as u32,
+        p1 = in(reg) low_precedence_key_handle as u32,
+        p2 = in(reg) file_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) high_precedence_key_handle as u32,
+        p1 = in(reg) low_precedence_key_handle as u32,
+        p2 = in(reg) file_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -39504,22 +45989,37 @@ pub unsafe fn nt_savepoint_complete(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x2E50DE3E_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x2E50DE3E_u32);
-    let params: [u32; 2] = [transaction_handle as u32, tm_virtual_clock as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) transaction_handle as u32,
+        p1 = in(reg) tm_virtual_clock as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) transaction_handle as u32,
+        p1 = in(reg) tm_virtual_clock as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -39591,23 +46091,41 @@ pub unsafe fn nt_savepoint_transaction(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x28601F25_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x28601F25_u32);
-    let params: [u32; 3] = [transaction_handle as u32, flag as u32, save_point_id as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) transaction_handle as u32,
+        p1 = in(reg) flag as u32,
+        p2 = in(reg) save_point_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) transaction_handle as u32,
+        p1 = in(reg) flag as u32,
+        p2 = in(reg) save_point_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -39704,7 +46222,10 @@ pub unsafe fn nt_secure_connect_port(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 32]",
         "push dword ptr [{params_ptr} + 28]",
         "push dword ptr [{params_ptr} + 24]",
@@ -39714,16 +46235,34 @@ pub unsafe fn nt_secure_connect_port(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 36",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 40",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 36",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -39789,18 +46328,26 @@ pub unsafe fn nt_serialize_boot() -> NTSTATUS {
     let syscall_addr = sw3_get_random_syscall_address(0x9080FE53_u32);
     let status: i32;
 
-    core::arch::asm!(
-
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 0",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 4",
+            gate = in(reg) wow64_gate as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+            "mov edx, esp",
+            "call {addr}",
+            addr = in(reg) syscall_addr as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -39864,22 +46411,37 @@ pub unsafe extern "C" fn nt_set_boot_entry_order(ids: *mut ULONG, count: ULONG) 
 pub unsafe fn nt_set_boot_entry_order(ids: *mut ULONG, count: ULONG) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x914AEBA3_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x914AEBA3_u32);
-    let params: [u32; 2] = [ids as u32, count as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) ids as u32,
+        p1 = in(reg) count as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) ids as u32,
+        p1 = in(reg) count as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -39949,22 +46511,37 @@ pub unsafe fn nt_set_boot_options(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x499A6F31_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x499A6F31_u32);
-    let params: [u32; 2] = [boot_options as u32, fields_to_change as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) boot_options as u32,
+        p1 = in(reg) fields_to_change as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) boot_options as u32,
+        p1 = in(reg) fields_to_change as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -40049,22 +46626,39 @@ pub unsafe fn nt_set_cached_signing_level(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -40152,23 +46746,41 @@ pub unsafe fn nt_set_cached_signing_level2(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -40235,22 +46847,37 @@ pub unsafe extern "C" fn nt_set_context_thread(
 pub unsafe fn nt_set_context_thread(thread_handle: HANDLE, context: PCONTEXT) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x321EFD35_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x321EFD35_u32);
-    let params: [u32; 2] = [thread_handle as u32, context as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) thread_handle as u32,
+        p1 = in(reg) context as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) thread_handle as u32,
+        p1 = in(reg) context as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -40322,23 +46949,41 @@ pub unsafe fn nt_set_debug_filter_state(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x3E813822_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x3E813822_u32);
-    let params: [u32; 3] = [component_id as u32, level as u32, state as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) component_id as u32,
+        p1 = in(reg) level as u32,
+        p2 = in(reg) state as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) component_id as u32,
+        p1 = in(reg) level as u32,
+        p2 = in(reg) state as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -40402,21 +47047,33 @@ pub unsafe extern "C" fn nt_set_default_hard_error_port(port_handle: HANDLE) -> 
 pub unsafe fn nt_set_default_hard_error_port(port_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x24BDA7B2_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x24BDA7B2_u32);
-    let params: [u32; 1] = [port_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) port_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) port_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -40483,22 +47140,37 @@ pub unsafe extern "C" fn nt_set_default_locale(
 pub unsafe fn nt_set_default_locale(user_profile: BOOLEAN, default_locale_id: LCID) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x05AB1B11_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x05AB1B11_u32);
-    let params: [u32; 2] = [user_profile as u32, default_locale_id as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) user_profile as u32,
+        p1 = in(reg) default_locale_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) user_profile as u32,
+        p1 = in(reg) default_locale_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -40562,21 +47234,33 @@ pub unsafe extern "C" fn nt_set_default_ui_language(default_ui_language_id: LANG
 pub unsafe fn nt_set_default_ui_language(default_ui_language_id: LANGID) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x33822036_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x33822036_u32);
-    let params: [u32; 1] = [default_ui_language_id as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) default_ui_language_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) default_ui_language_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -40640,22 +47324,37 @@ pub unsafe extern "C" fn nt_set_driver_entry_order(ids: *mut ULONG, count: *mut 
 pub unsafe fn nt_set_driver_entry_order(ids: *mut ULONG, count: *mut ULONG) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x12098904_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x12098904_u32);
-    let params: [u32; 2] = [ids as u32, count as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) ids as u32,
+        p1 = in(reg) count as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) ids as u32,
+        p1 = in(reg) count as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -40729,29 +47428,45 @@ pub unsafe fn nt_set_ea_file(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x2299AAAE_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x2299AAAE_u32);
-    let params: [u32; 4] = [
-        file_handle as u32,
-        io_status_block as u32,
-        ea_buffer as u32,
-        ea_buffer_size as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) file_handle as u32,
+        p1 = in(reg) io_status_block as u32,
+        p2 = in(reg) ea_buffer as u32,
+        p3 = in(reg) ea_buffer_size as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) file_handle as u32,
+        p1 = in(reg) io_status_block as u32,
+        p2 = in(reg) ea_buffer as u32,
+        p3 = in(reg) ea_buffer_size as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -40818,22 +47533,37 @@ pub unsafe extern "C" fn nt_set_event(
 pub unsafe fn nt_set_event(event_handle: HANDLE, previous_state: *mut ULONG) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x594BBC52_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x594BBC52_u32);
-    let params: [u32; 2] = [event_handle as u32, previous_state as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) event_handle as u32,
+        p1 = in(reg) previous_state as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) event_handle as u32,
+        p1 = in(reg) previous_state as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -40897,21 +47627,33 @@ pub unsafe extern "C" fn nt_set_event_boost_priority(event_handle: HANDLE) -> NT
 pub unsafe fn nt_set_event_boost_priority(event_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x44A25048_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x44A25048_u32);
-    let params: [u32; 1] = [event_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) event_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) event_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -40983,23 +47725,41 @@ pub unsafe fn nt_set_event_ex(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x9918ADA3_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x9918ADA3_u32);
-    let params: [u32; 3] = [event_handle as u32, flags as u32, previous_state as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) event_handle as u32,
+        p1 = in(reg) flags as u32,
+        p2 = in(reg) previous_state as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) event_handle as u32,
+        p1 = in(reg) flags as u32,
+        p2 = in(reg) previous_state as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -41063,21 +47823,33 @@ pub unsafe extern "C" fn nt_set_high_event_pair(event_pair_handle: HANDLE) -> NT
 pub unsafe fn nt_set_high_event_pair(event_pair_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xEB5BB99C_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xEB5BB99C_u32);
-    let params: [u32; 1] = [event_pair_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) event_pair_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) event_pair_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -41141,21 +47913,33 @@ pub unsafe extern "C" fn nt_set_high_wait_low_event_pair(event_pair_handle: HAND
 pub unsafe fn nt_set_high_wait_low_event_pair(event_pair_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x64D3F8FD_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x64D3F8FD_u32);
-    let params: [u32; 1] = [event_pair_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) event_pair_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) event_pair_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -41222,22 +48006,37 @@ pub unsafe extern "C" fn nt_set_ir_timer(
 pub unsafe fn nt_set_ir_timer(timer_handle: HANDLE, due_time: *mut LARGE_INTEGER) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x9FA6B51E_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x9FA6B51E_u32);
-    let params: [u32; 2] = [timer_handle as u32, due_time as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) timer_handle as u32,
+        p1 = in(reg) due_time as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) timer_handle as u32,
+        p1 = in(reg) due_time as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -41311,29 +48110,45 @@ pub unsafe fn nt_set_information_cpu_partition(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x4ED84E4B_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x4ED84E4B_u32);
-    let params: [u32; 4] = [
-        partition_handle as u32,
-        partition_information_class as u32,
-        partition_information as u32,
-        partition_information_length as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) partition_handle as u32,
+        p1 = in(reg) partition_information_class as u32,
+        p2 = in(reg) partition_information as u32,
+        p3 = in(reg) partition_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) partition_handle as u32,
+        p1 = in(reg) partition_information_class as u32,
+        p2 = in(reg) partition_information as u32,
+        p3 = in(reg) partition_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -41418,22 +48233,39 @@ pub unsafe fn nt_set_information_debug_object(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -41507,29 +48339,45 @@ pub unsafe fn nt_set_information_enlistment(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xB7294E23_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xB7294E23_u32);
-    let params: [u32; 4] = [
-        enlistment_handle as u32,
-        enlistment_information_class as u32,
-        enlistment_information as u32,
-        enlistment_information_length as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) enlistment_handle as u32,
+        p1 = in(reg) enlistment_information_class as u32,
+        p2 = in(reg) enlistment_information as u32,
+        p3 = in(reg) enlistment_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) enlistment_handle as u32,
+        p1 = in(reg) enlistment_information_class as u32,
+        p2 = in(reg) enlistment_information as u32,
+        p3 = in(reg) enlistment_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -41614,22 +48462,39 @@ pub unsafe fn nt_set_information_file(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -41703,29 +48568,45 @@ pub unsafe fn nt_set_information_io_ring(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xBC239276_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xBC239276_u32);
-    let params: [u32; 4] = [
-        io_ring_handle as u32,
-        io_ring_information_class as u32,
-        io_ring_information as u32,
-        io_ring_information_length as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) io_ring_handle as u32,
+        p1 = in(reg) io_ring_information_class as u32,
+        p2 = in(reg) io_ring_information as u32,
+        p3 = in(reg) io_ring_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) io_ring_handle as u32,
+        p1 = in(reg) io_ring_information_class as u32,
+        p2 = in(reg) io_ring_information as u32,
+        p3 = in(reg) io_ring_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -41799,29 +48680,45 @@ pub unsafe fn nt_set_information_job_object(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xB8958819_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xB8958819_u32);
-    let params: [u32; 4] = [
-        job_handle as u32,
-        job_object_information_class as u32,
-        job_object_information as u32,
-        job_object_information_length as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) job_handle as u32,
+        p1 = in(reg) job_object_information_class as u32,
+        p2 = in(reg) job_object_information as u32,
+        p3 = in(reg) job_object_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) job_handle as u32,
+        p1 = in(reg) job_object_information_class as u32,
+        p2 = in(reg) job_object_information as u32,
+        p3 = in(reg) job_object_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -41895,29 +48792,45 @@ pub unsafe fn nt_set_information_key(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x9015B78A_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x9015B78A_u32);
-    let params: [u32; 4] = [
-        key_handle as u32,
-        key_set_information_class as u32,
-        key_set_information as u32,
-        key_set_information_length as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) key_handle as u32,
+        p1 = in(reg) key_set_information_class as u32,
+        p2 = in(reg) key_set_information as u32,
+        p3 = in(reg) key_set_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) key_handle as u32,
+        p1 = in(reg) key_set_information_class as u32,
+        p2 = in(reg) key_set_information as u32,
+        p3 = in(reg) key_set_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -41991,29 +48904,45 @@ pub unsafe fn nt_set_information_object(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x2EB65659_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x2EB65659_u32);
-    let params: [u32; 4] = [
-        handle as u32,
-        object_information_class as u32,
-        object_information as u32,
-        object_information_length as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) handle as u32,
+        p1 = in(reg) object_information_class as u32,
+        p2 = in(reg) object_information as u32,
+        p3 = in(reg) object_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) handle as u32,
+        p1 = in(reg) object_information_class as u32,
+        p2 = in(reg) object_information as u32,
+        p3 = in(reg) object_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -42087,29 +49016,45 @@ pub unsafe fn nt_set_information_process(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x5F917C3E_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x5F917C3E_u32);
-    let params: [u32; 4] = [
-        device_handle as u32,
-        process_information_class as u32,
-        process_information as u32,
-        length as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) device_handle as u32,
+        p1 = in(reg) process_information_class as u32,
+        p2 = in(reg) process_information as u32,
+        p3 = in(reg) length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) device_handle as u32,
+        p1 = in(reg) process_information_class as u32,
+        p2 = in(reg) process_information as u32,
+        p3 = in(reg) length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -42183,29 +49128,45 @@ pub unsafe fn nt_set_information_resource_manager(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x092A47F6_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x092A47F6_u32);
-    let params: [u32; 4] = [
-        resource_manager_handle as u32,
-        resource_manager_information_class as u32,
-        resource_manager_information as u32,
-        resource_manager_information_length as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) resource_manager_handle as u32,
+        p1 = in(reg) resource_manager_information_class as u32,
+        p2 = in(reg) resource_manager_information as u32,
+        p3 = in(reg) resource_manager_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) resource_manager_handle as u32,
+        p1 = in(reg) resource_manager_information_class as u32,
+        p2 = in(reg) resource_manager_information as u32,
+        p3 = in(reg) resource_manager_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -42279,29 +49240,45 @@ pub unsafe fn nt_set_information_silo_object(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xB6958618_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xB6958618_u32);
-    let params: [u32; 4] = [
-        silo_handle as u32,
-        silo_information_class as u32,
-        silo_information as u32,
-        silo_information_length as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) silo_handle as u32,
+        p1 = in(reg) silo_information_class as u32,
+        p2 = in(reg) silo_information as u32,
+        p3 = in(reg) silo_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) silo_handle as u32,
+        p1 = in(reg) silo_information_class as u32,
+        p2 = in(reg) silo_information as u32,
+        p3 = in(reg) silo_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -42375,29 +49352,45 @@ pub unsafe fn nt_set_information_symbolic_link(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x2CBF202E_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x2CBF202E_u32);
-    let params: [u32; 4] = [
-        handle as u32,
-        class as u32,
-        buffer as u32,
-        buffer_length as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) handle as u32,
+        p1 = in(reg) class as u32,
+        p2 = in(reg) buffer as u32,
+        p3 = in(reg) buffer_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) handle as u32,
+        p1 = in(reg) class as u32,
+        p2 = in(reg) buffer as u32,
+        p3 = in(reg) buffer_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -42471,29 +49464,45 @@ pub unsafe fn nt_set_information_thread(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x94C75EE8_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x94C75EE8_u32);
-    let params: [u32; 4] = [
-        thread_handle as u32,
-        thread_information_class as u32,
-        thread_information as u32,
-        thread_information_length as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) thread_handle as u32,
+        p1 = in(reg) thread_information_class as u32,
+        p2 = in(reg) thread_information as u32,
+        p3 = in(reg) thread_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) thread_handle as u32,
+        p1 = in(reg) thread_information_class as u32,
+        p2 = in(reg) thread_information as u32,
+        p3 = in(reg) thread_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -42567,29 +49576,45 @@ pub unsafe fn nt_set_information_token(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x0DA9792A_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x0DA9792A_u32);
-    let params: [u32; 4] = [
-        token_handle as u32,
-        token_information_class as u32,
-        token_information as u32,
-        token_information_length as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) token_handle as u32,
+        p1 = in(reg) token_information_class as u32,
+        p2 = in(reg) token_information as u32,
+        p3 = in(reg) token_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) token_handle as u32,
+        p1 = in(reg) token_information_class as u32,
+        p2 = in(reg) token_information as u32,
+        p3 = in(reg) token_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -42663,29 +49688,45 @@ pub unsafe fn nt_set_information_transaction(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xCE912805_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xCE912805_u32);
-    let params: [u32; 4] = [
-        transaction_handle as u32,
-        transaction_information_class as u32,
-        transaction_information as u32,
-        transaction_information_length as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) transaction_handle as u32,
+        p1 = in(reg) transaction_information_class as u32,
+        p2 = in(reg) transaction_information as u32,
+        p3 = in(reg) transaction_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) transaction_handle as u32,
+        p1 = in(reg) transaction_information_class as u32,
+        p2 = in(reg) transaction_information as u32,
+        p3 = in(reg) transaction_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -42759,29 +49800,45 @@ pub unsafe fn nt_set_information_transaction_manager(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xE73FF1A4_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xE73FF1A4_u32);
-    let params: [u32; 4] = [
-        transaction_handle as u32,
-        transaction_information_class as u32,
-        transaction_information as u32,
-        transaction_information_length as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) transaction_handle as u32,
+        p1 = in(reg) transaction_information_class as u32,
+        p2 = in(reg) transaction_information as u32,
+        p3 = in(reg) transaction_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) transaction_handle as u32,
+        p1 = in(reg) transaction_information_class as u32,
+        p2 = in(reg) transaction_information as u32,
+        p3 = in(reg) transaction_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -42869,23 +49926,41 @@ pub unsafe fn nt_set_information_virtual_memory(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -42959,29 +50034,45 @@ pub unsafe fn nt_set_information_worker_factory(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xF8EEE47B_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xF8EEE47B_u32);
-    let params: [u32; 4] = [
-        worker_factory_handle as u32,
-        worker_factory_information_class as u32,
-        worker_factory_information as u32,
-        worker_factory_information_length as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) worker_factory_handle as u32,
+        p1 = in(reg) worker_factory_information_class as u32,
+        p2 = in(reg) worker_factory_information as u32,
+        p3 = in(reg) worker_factory_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) worker_factory_handle as u32,
+        p1 = in(reg) worker_factory_information_class as u32,
+        p2 = in(reg) worker_factory_information as u32,
+        p3 = in(reg) worker_factory_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -43045,22 +50136,37 @@ pub unsafe extern "C" fn nt_set_interval_profile(interval: ULONG, source: u32) -
 pub unsafe fn nt_set_interval_profile(interval: ULONG, source: u32) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x0C9D423E_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x0C9D423E_u32);
-    let params: [u32; 2] = [interval as u32, source as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) interval as u32,
+        p1 = in(reg) source as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) interval as u32,
+        p1 = in(reg) source as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -43145,22 +50251,39 @@ pub unsafe fn nt_set_io_completion(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -43248,23 +50371,41 @@ pub unsafe fn nt_set_io_completion_ex(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -43352,23 +50493,41 @@ pub unsafe fn nt_set_ldt_entries(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -43432,21 +50591,33 @@ pub unsafe extern "C" fn nt_set_low_event_pair(event_pair_handle: HANDLE) -> NTS
 pub unsafe fn nt_set_low_event_pair(event_pair_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x02B27E5F_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x02B27E5F_u32);
-    let params: [u32; 1] = [event_pair_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) event_pair_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) event_pair_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -43510,21 +50681,33 @@ pub unsafe extern "C" fn nt_set_low_wait_high_event_pair(event_pair_handle: HAND
 pub unsafe fn nt_set_low_wait_high_event_pair(event_pair_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x90B4A812_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x90B4A812_u32);
-    let params: [u32; 1] = [event_pair_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) event_pair_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) event_pair_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -43598,29 +50781,45 @@ pub unsafe fn nt_set_quota_information_file(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xE576DBE3_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xE576DBE3_u32);
-    let params: [u32; 4] = [
-        file_handle as u32,
-        io_status_block as u32,
-        buffer as u32,
-        length as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) file_handle as u32,
+        p1 = in(reg) io_status_block as u32,
+        p2 = in(reg) buffer as u32,
+        p3 = in(reg) length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) file_handle as u32,
+        p1 = in(reg) io_status_block as u32,
+        p2 = in(reg) buffer as u32,
+        p3 = in(reg) length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -43692,27 +50891,41 @@ pub unsafe fn nt_set_security_object(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xEEDCC640_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xEEDCC640_u32);
-    let params: [u32; 3] = [
-        object_handle as u32,
-        security_information_class as u32,
-        descriptor_buffer as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) object_handle as u32,
+        p1 = in(reg) security_information_class as u32,
+        p2 = in(reg) descriptor_buffer as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) object_handle as u32,
+        p1 = in(reg) security_information_class as u32,
+        p2 = in(reg) descriptor_buffer as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -43782,22 +50995,37 @@ pub unsafe fn nt_set_system_environment_value(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x1AB1490A_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x1AB1490A_u32);
-    let params: [u32; 2] = [variable_name as u32, value as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) variable_name as u32,
+        p1 = in(reg) value as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) variable_name as u32,
+        p1 = in(reg) value as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -43882,22 +51110,39 @@ pub unsafe fn nt_set_system_environment_value_ex(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -43969,27 +51214,41 @@ pub unsafe fn nt_set_system_information(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xCE5FE8CB_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xCE5FE8CB_u32);
-    let params: [u32; 3] = [
-        system_information_class as u32,
-        system_information as u32,
-        system_information_length as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) system_information_class as u32,
+        p1 = in(reg) system_information as u32,
+        p2 = in(reg) system_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) system_information_class as u32,
+        p1 = in(reg) system_information as u32,
+        p2 = in(reg) system_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -44061,23 +51320,41 @@ pub unsafe fn nt_set_system_power_state(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x8E3186A2_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x8E3186A2_u32);
-    let params: [u32; 3] = [system_action as u32, min_system_state as u32, flags as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) system_action as u32,
+        p1 = in(reg) min_system_state as u32,
+        p2 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) system_action as u32,
+        p1 = in(reg) min_system_state as u32,
+        p2 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -44147,22 +51424,37 @@ pub unsafe fn nt_set_system_time(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x6CAA517B_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x6CAA517B_u32);
-    let params: [u32; 2] = [system_time as u32, previous_time as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) system_time as u32,
+        p1 = in(reg) previous_time as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) system_time as u32,
+        p1 = in(reg) previous_time as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -44232,22 +51524,37 @@ pub unsafe fn nt_set_thread_execution_state(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xF26B98A6_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xF26B98A6_u32);
-    let params: [u32; 2] = [execution_state as u32, previous_execution_state as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) execution_state as u32,
+        p1 = in(reg) previous_execution_state as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) execution_state as u32,
+        p1 = in(reg) previous_execution_state as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -44327,20 +51634,21 @@ pub unsafe fn nt_set_timer(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x7DCA1534_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x7DCA1534_u32);
-    let params: [u32; 7] = unsafe {
-        [
-            timer_handle as u32,
-            due_time as u32,
-            core::mem::transmute::<_, u32>(timer_apc_routine),
-            timer_context as u32,
-            resume_timer as u32,
-            period as u32,
-            previous_state as u32,
-        ]
-    };
+    let params: [u32; 7] = [
+        timer_handle as u32,
+        due_time as u32,
+        core::mem::transmute::<_, u32>(timer_apc_routine),
+        timer_context as u32,
+        resume_timer as u32,
+        period as u32,
+        previous_state as u32,
+    ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 24]",
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
@@ -44348,16 +51656,32 @@ pub unsafe fn nt_set_timer(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 28",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 32",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 28",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -44431,29 +51755,45 @@ pub unsafe fn nt_set_timer2(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x49B791B9_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x49B791B9_u32);
-    let params: [u32; 4] = [
-        timer_handle as u32,
-        due_time as u32,
-        period as u32,
-        parameters as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) timer_handle as u32,
+        p1 = in(reg) due_time as u32,
+        p2 = in(reg) period as u32,
+        p3 = in(reg) parameters as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) timer_handle as u32,
+        p1 = in(reg) due_time as u32,
+        p2 = in(reg) period as u32,
+        p3 = in(reg) parameters as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -44527,29 +51867,45 @@ pub unsafe fn nt_set_timer_ex(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xEEFDB823_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xEEFDB823_u32);
-    let params: [u32; 4] = [
-        timer_handle as u32,
-        timer_set_information_class as u32,
-        timer_set_information as u32,
-        timer_set_information_length as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) timer_handle as u32,
+        p1 = in(reg) timer_set_information_class as u32,
+        p2 = in(reg) timer_set_information as u32,
+        p3 = in(reg) timer_set_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) timer_handle as u32,
+        p1 = in(reg) timer_set_information_class as u32,
+        p2 = in(reg) timer_set_information as u32,
+        p3 = in(reg) timer_set_information_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -44621,27 +51977,41 @@ pub unsafe fn nt_set_timer_resolution(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x5CD67C45_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x5CD67C45_u32);
-    let params: [u32; 3] = [
-        desired_resolution as u32,
-        set_resolution as u32,
-        current_resolution as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) desired_resolution as u32,
+        p1 = in(reg) set_resolution as u32,
+        p2 = in(reg) current_resolution as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) desired_resolution as u32,
+        p1 = in(reg) set_resolution as u32,
+        p2 = in(reg) current_resolution as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -44705,21 +52075,33 @@ pub unsafe extern "C" fn nt_set_uuid_seed(seed: *mut UCHAR) -> NTSTATUS {
 pub unsafe fn nt_set_uuid_seed(seed: *mut UCHAR) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x47DF5172_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x47DF5172_u32);
-    let params: [u32; 1] = [seed as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) seed as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) seed as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -44807,23 +52189,41 @@ pub unsafe fn nt_set_value_key(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -44908,22 +52308,39 @@ pub unsafe fn nt_set_volume_information_file(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -44989,21 +52406,33 @@ pub unsafe extern "C" fn nt_set_wnf_process_notification_event(
 pub unsafe fn nt_set_wnf_process_notification_event(notification_event: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x600379EE_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x600379EE_u32);
-    let params: [u32; 1] = [notification_event as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) notification_event as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) notification_event as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -45067,21 +52496,33 @@ pub unsafe extern "C" fn nt_shutdown_system(action: u32) -> NTSTATUS {
 pub unsafe fn nt_shutdown_system(action: u32) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x019F3445_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x019F3445_u32);
-    let params: [u32; 1] = [action as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) action as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) action as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -45151,22 +52592,37 @@ pub unsafe fn nt_shutdown_worker_factory(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xC48AF642_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xC48AF642_u32);
-    let params: [u32; 2] = [worker_factory_handle as u32, pending_worker_count as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) worker_factory_handle as u32,
+        p1 = in(reg) pending_worker_count as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) worker_factory_handle as u32,
+        p1 = in(reg) pending_worker_count as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -45240,29 +52696,45 @@ pub unsafe fn nt_signal_and_wait_for_single_object(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x06987045_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x06987045_u32);
-    let params: [u32; 4] = [
-        h_object_to_signal as u32,
-        h_object_to_wait_on as u32,
-        b_alertable as u32,
-        dw_milliseconds as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) h_object_to_signal as u32,
+        p1 = in(reg) h_object_to_wait_on as u32,
+        p2 = in(reg) b_alertable as u32,
+        p3 = in(reg) dw_milliseconds as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) h_object_to_signal as u32,
+        p1 = in(reg) h_object_to_wait_on as u32,
+        p2 = in(reg) b_alertable as u32,
+        p3 = in(reg) dw_milliseconds as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -45332,22 +52804,37 @@ pub unsafe fn nt_single_phase_reject(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x30AD0021_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x30AD0021_u32);
-    let params: [u32; 2] = [enlistment_handle as u32, tm_virtual_clock as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) enlistment_handle as u32,
+        p1 = in(reg) tm_virtual_clock as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) enlistment_handle as u32,
+        p1 = in(reg) tm_virtual_clock as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -45411,21 +52898,33 @@ pub unsafe extern "C" fn nt_start_profile(profile_handle: HANDLE) -> NTSTATUS {
 pub unsafe fn nt_start_profile(profile_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xA03BF080_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xA03BF080_u32);
-    let params: [u32; 1] = [profile_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) profile_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) profile_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -45491,18 +52990,26 @@ pub unsafe fn nt_start_tm() -> NTSTATUS {
     let syscall_addr = sw3_get_random_syscall_address(0x3D901F2E_u32);
     let status: i32;
 
-    core::arch::asm!(
-
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 0",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 4",
+            gate = in(reg) wow64_gate as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+            "mov edx, esp",
+            "call {addr}",
+            addr = in(reg) syscall_addr as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -45566,21 +53073,33 @@ pub unsafe extern "C" fn nt_stop_profile(profile_handle: HANDLE) -> NTSTATUS {
 pub unsafe fn nt_stop_profile(profile_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x039B1723_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x039B1723_u32);
-    let params: [u32; 1] = [profile_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) profile_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) profile_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -45654,29 +53173,45 @@ pub unsafe fn nt_submit_io_ring(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x9889F048_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x9889F048_u32);
-    let params: [u32; 4] = [
-        io_ring_handle as u32,
-        flags as u32,
-        wait_operations as u32,
-        timeout as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) io_ring_handle as u32,
+        p1 = in(reg) flags as u32,
+        p2 = in(reg) wait_operations as u32,
+        p3 = in(reg) timeout as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) io_ring_handle as u32,
+        p1 = in(reg) flags as u32,
+        p2 = in(reg) wait_operations as u32,
+        p3 = in(reg) timeout as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -45750,29 +53285,45 @@ pub unsafe fn nt_subscribe_wnf_state_change(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x3E9F7722_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x3E9F7722_u32);
-    let params: [u32; 4] = [
-        state_name as u32,
-        change_stamp as u32,
-        event_mask as u32,
-        subscription_id as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) state_name as u32,
+        p1 = in(reg) change_stamp as u32,
+        p2 = in(reg) event_mask as u32,
+        p3 = in(reg) subscription_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) state_name as u32,
+        p1 = in(reg) change_stamp as u32,
+        p2 = in(reg) event_mask as u32,
+        p3 = in(reg) subscription_id as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -45836,21 +53387,33 @@ pub unsafe extern "C" fn nt_suspend_process(process_handle: HANDLE) -> NTSTATUS 
 pub unsafe fn nt_suspend_process(process_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x9D1F9C92_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x9D1F9C92_u32);
-    let params: [u32; 1] = [process_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) process_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) process_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -45920,22 +53483,37 @@ pub unsafe fn nt_suspend_thread(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x842D9693_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x842D9693_u32);
-    let params: [u32; 2] = [thread_handle as u32, previous_suspend_count as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) thread_handle as u32,
+        p1 = in(reg) previous_suspend_count as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) thread_handle as u32,
+        p1 = in(reg) previous_suspend_count as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -46023,23 +53601,41 @@ pub unsafe fn nt_system_debug_control(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -46106,22 +53702,37 @@ pub unsafe extern "C" fn nt_terminate_enclave(
 pub unsafe fn nt_terminate_enclave(base_address: PVOID, wait_for_thread: BOOLEAN) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x04ABF8F8_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x04ABF8F8_u32);
-    let params: [u32; 2] = [base_address as u32, wait_for_thread as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) base_address as u32,
+        p1 = in(reg) wait_for_thread as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) base_address as u32,
+        p1 = in(reg) wait_for_thread as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -46188,22 +53799,37 @@ pub unsafe extern "C" fn nt_terminate_job_object(
 pub unsafe fn nt_terminate_job_object(job_handle: HANDLE, exit_status: NTSTATUS) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x6B5457CB_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x6B5457CB_u32);
-    let params: [u32; 2] = [job_handle as u32, exit_status as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) job_handle as u32,
+        p1 = in(reg) exit_status as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) job_handle as u32,
+        p1 = in(reg) exit_status as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -46270,22 +53896,37 @@ pub unsafe extern "C" fn nt_terminate_process(
 pub unsafe fn nt_terminate_process(process_handle: HANDLE, exit_status: NTSTATUS) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x3BC33A4E_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x3BC33A4E_u32);
-    let params: [u32; 2] = [process_handle as u32, exit_status as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) exit_status as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) exit_status as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -46352,22 +53993,37 @@ pub unsafe extern "C" fn nt_terminate_silo_object(
 pub unsafe fn nt_terminate_silo_object(silo_handle: HANDLE, exit_status: NTSTATUS) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xEFB005EF_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xEFB005EF_u32);
-    let params: [u32; 2] = [silo_handle as u32, exit_status as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) silo_handle as u32,
+        p1 = in(reg) exit_status as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) silo_handle as u32,
+        p1 = in(reg) exit_status as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -46434,22 +54090,37 @@ pub unsafe extern "C" fn nt_terminate_thread(
 pub unsafe fn nt_terminate_thread(thread_handle: HANDLE, exit_status: NTSTATUS) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xCA8B14C9_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xCA8B14C9_u32);
-    let params: [u32; 2] = [thread_handle as u32, exit_status as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) thread_handle as u32,
+        p1 = in(reg) exit_status as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) thread_handle as u32,
+        p1 = in(reg) exit_status as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -46515,18 +54186,26 @@ pub unsafe fn nt_test_alert() -> NTSTATUS {
     let syscall_addr = sw3_get_random_syscall_address(0x14A61334_u32);
     let status: i32;
 
-    core::arch::asm!(
-
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 0",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 4",
+            gate = in(reg) wow64_gate as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+            "mov edx, esp",
+            "call {addr}",
+            addr = in(reg) syscall_addr as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -46592,18 +54271,26 @@ pub unsafe fn nt_thaw_registry() -> NTSTATUS {
     let syscall_addr = sw3_get_random_syscall_address(0xC24BD8D7_u32);
     let status: i32;
 
-    core::arch::asm!(
-
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 0",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 4",
+            gate = in(reg) wow64_gate as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+            "mov edx, esp",
+            "call {addr}",
+            addr = in(reg) syscall_addr as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -46669,18 +54356,26 @@ pub unsafe fn nt_thaw_transactions() -> NTSTATUS {
     let syscall_addr = sw3_get_random_syscall_address(0xBF62FDB5_u32);
     let status: i32;
 
-    core::arch::asm!(
-
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 0",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 4",
+            gate = in(reg) wow64_gate as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+            "mov edx, esp",
+            "call {addr}",
+            addr = in(reg) syscall_addr as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -46768,23 +54463,41 @@ pub unsafe fn nt_trace_control(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -46858,29 +54571,45 @@ pub unsafe fn nt_trace_event(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x094AEB3C_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x094AEB3C_u32);
-    let params: [u32; 4] = [
-        trace_handle as u32,
-        flags as u32,
-        field_size as u32,
-        fields as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) trace_handle as u32,
+        p1 = in(reg) flags as u32,
+        p2 = in(reg) field_size as u32,
+        p3 = in(reg) fields as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) trace_handle as u32,
+        p1 = in(reg) flags as u32,
+        p2 = in(reg) field_size as u32,
+        p3 = in(reg) fields as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -46954,29 +54683,45 @@ pub unsafe fn nt_translate_file_path(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xB3D2BFB6_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xB3D2BFB6_u32);
-    let params: [u32; 4] = [
-        input_file_path as u32,
-        output_type as u32,
-        output_file_path as u32,
-        output_file_path_length as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) input_file_path as u32,
+        p1 = in(reg) output_type as u32,
+        p2 = in(reg) output_file_path as u32,
+        p3 = in(reg) output_file_path_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) input_file_path as u32,
+        p1 = in(reg) output_type as u32,
+        p2 = in(reg) output_file_path as u32,
+        p3 = in(reg) output_file_path_length as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -47040,21 +54785,33 @@ pub unsafe extern "C" fn nt_ums_thread_yield(scheduler_param: PVOID) -> NTSTATUS
 pub unsafe fn nt_ums_thread_yield(scheduler_param: PVOID) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xA4B8EF1F_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xA4B8EF1F_u32);
-    let params: [u32; 1] = [scheduler_param as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) scheduler_param as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) scheduler_param as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -47118,21 +54875,33 @@ pub unsafe extern "C" fn nt_unload_driver(driver_service_name: PUNICODE_STRING) 
 pub unsafe fn nt_unload_driver(driver_service_name: PUNICODE_STRING) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x2E9F0636_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x2E9F0636_u32);
-    let params: [u32; 1] = [driver_service_name as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) driver_service_name as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) driver_service_name as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -47196,21 +54965,33 @@ pub unsafe extern "C" fn nt_unload_key(destination_key_name: POBJECT_ATTRIBUTES)
 pub unsafe fn nt_unload_key(destination_key_name: POBJECT_ATTRIBUTES) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x1BEC1874_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x1BEC1874_u32);
-    let params: [u32; 1] = [destination_key_name as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) destination_key_name as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) destination_key_name as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -47274,22 +55055,37 @@ pub unsafe extern "C" fn nt_unload_key2(target_key: POBJECT_ATTRIBUTES, flags: U
 pub unsafe fn nt_unload_key2(target_key: POBJECT_ATTRIBUTES, flags: ULONG) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x6FF786E8_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x6FF786E8_u32);
-    let params: [u32; 2] = [target_key as u32, flags as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) target_key as u32,
+        p1 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) target_key as u32,
+        p1 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -47356,22 +55152,37 @@ pub unsafe extern "C" fn nt_unload_key_ex(
 pub unsafe fn nt_unload_key_ex(target_key: POBJECT_ATTRIBUTES, event: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xBF9FCB63_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xBF9FCB63_u32);
-    let params: [u32; 2] = [target_key as u32, event as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) target_key as u32,
+        p1 = in(reg) event as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) target_key as u32,
+        p1 = in(reg) event as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -47456,22 +55267,39 @@ pub unsafe fn nt_unlock_file(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -47545,29 +55373,45 @@ pub unsafe fn nt_unlock_virtual_memory(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x47D45359_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x47D45359_u32);
-    let params: [u32; 4] = [
-        process_handle as u32,
-        base_address as u32,
-        number_of_bytes_to_unlock as u32,
-        lock_type as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) base_address as u32,
+        p2 = in(reg) number_of_bytes_to_unlock as u32,
+        p3 = in(reg) lock_type as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) base_address as u32,
+        p2 = in(reg) number_of_bytes_to_unlock as u32,
+        p3 = in(reg) lock_type as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -47634,22 +55478,37 @@ pub unsafe extern "C" fn nt_unmap_view_of_section(
 pub unsafe fn nt_unmap_view_of_section(process_handle: HANDLE, base_address: PVOID) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x1688341D_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x1688341D_u32);
-    let params: [u32; 2] = [process_handle as u32, base_address as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) base_address as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) base_address as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -47721,23 +55580,41 @@ pub unsafe fn nt_unmap_view_of_section_ex(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x2E956E4C_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x2E956E4C_u32);
-    let params: [u32; 3] = [process_handle as u32, base_address as u32, flags as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) base_address as u32,
+        p2 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) process_handle as u32,
+        p1 = in(reg) base_address as u32,
+        p2 = in(reg) flags as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -47801,21 +55678,33 @@ pub unsafe extern "C" fn nt_unsubscribe_wnf_state_change(state_name: PCWNF_STATE
 pub unsafe fn nt_unsubscribe_wnf_state_change(state_name: PCWNF_STATE_NAME) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x5ECF5F52_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x5ECF5F52_u32);
-    let params: [u32; 1] = [state_name as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) state_name as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) state_name as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -47906,7 +55795,10 @@ pub unsafe fn nt_update_wnf_state_data(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 24]",
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
@@ -47914,16 +55806,32 @@ pub unsafe fn nt_update_wnf_state_data(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 28",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 32",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 28",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -47987,22 +55895,37 @@ pub unsafe extern "C" fn nt_vdm_control(service: u32, service_data: PVOID) -> NT
 pub unsafe fn nt_vdm_control(service: u32, service_data: PVOID) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x41E92D31_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x41E92D31_u32);
-    let params: [u32; 2] = [service as u32, service_data as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) service as u32,
+        p1 = in(reg) service_data as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) service as u32,
+        p1 = in(reg) service_data as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -48072,22 +55995,37 @@ pub unsafe fn nt_wait_for_alert_by_thread_id(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x1888FEF2_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x1888FEF2_u32);
-    let params: [u32; 2] = [handle as u32, timeout as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) handle as u32,
+        p1 = in(reg) timeout as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) handle as u32,
+        p1 = in(reg) timeout as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -48161,29 +56099,45 @@ pub unsafe fn nt_wait_for_debug_event(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x480F4D9E_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x480F4D9E_u32);
-    let params: [u32; 4] = [
-        debug_object_handle as u32,
-        alertable as u32,
-        timeout as u32,
-        wait_state_change as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) debug_object_handle as u32,
+        p1 = in(reg) alertable as u32,
+        p2 = in(reg) timeout as u32,
+        p3 = in(reg) wait_state_change as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) debug_object_handle as u32,
+        p1 = in(reg) alertable as u32,
+        p2 = in(reg) timeout as u32,
+        p3 = in(reg) wait_state_change as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -48257,29 +56211,45 @@ pub unsafe fn nt_wait_for_keyed_event(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xE852D1E4_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xE852D1E4_u32);
-    let params: [u32; 4] = [
-        keyed_event_handle as u32,
-        key as u32,
-        alertable as u32,
-        timeout as u32,
-    ];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 12]",
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 16",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 20",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) keyed_event_handle as u32,
+        p1 = in(reg) key as u32,
+        p2 = in(reg) alertable as u32,
+        p3 = in(reg) timeout as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p3}",
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 16",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) keyed_event_handle as u32,
+        p1 = in(reg) key as u32,
+        p2 = in(reg) alertable as u32,
+        p3 = in(reg) timeout as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -48364,22 +56334,39 @@ pub unsafe fn nt_wait_for_multiple_objects(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -48464,22 +56451,39 @@ pub unsafe fn nt_wait_for_multiple_objects32(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -48551,23 +56555,41 @@ pub unsafe fn nt_wait_for_single_object(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x663C6CA2_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x663C6CA2_u32);
-    let params: [u32; 3] = [object_handle as u32, alertable as u32, time_out as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 8]",
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 12",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 16",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) object_handle as u32,
+        p1 = in(reg) alertable as u32,
+        p2 = in(reg) time_out as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p2}",
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 12",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) object_handle as u32,
+        p1 = in(reg) alertable as u32,
+        p2 = in(reg) time_out as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -48633,18 +56655,26 @@ pub unsafe fn nt_wait_for_wnf_notifications() -> NTSTATUS {
     let syscall_addr = sw3_get_random_syscall_address(0xCD28D74F_u32);
     let status: i32;
 
-    core::arch::asm!(
-
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 0",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 4",
+            gate = in(reg) wow64_gate as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+            "mov edx, esp",
+            "call {addr}",
+            addr = in(reg) syscall_addr as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -48714,22 +56744,37 @@ pub unsafe fn nt_wait_for_work_via_worker_factory(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x088C0E14_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x088C0E14_u32);
-    let params: [u32; 2] = [worker_factory_handle as u32, mini_packet as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 4]",
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 8",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 12",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) worker_factory_handle as u32,
+        p1 = in(reg) mini_packet as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p1}",
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 8",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) worker_factory_handle as u32,
+        p1 = in(reg) mini_packet as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -48793,21 +56838,33 @@ pub unsafe extern "C" fn nt_wait_high_event_pair(event_handle: HANDLE) -> NTSTAT
 pub unsafe fn nt_wait_high_event_pair(event_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x14943409_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x14943409_u32);
-    let params: [u32; 1] = [event_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) event_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) event_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -48871,21 +56928,33 @@ pub unsafe extern "C" fn nt_wait_low_event_pair(event_handle: HANDLE) -> NTSTATU
 pub unsafe fn nt_wait_low_event_pair(event_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x36EE7C31_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x36EE7C31_u32);
-    let params: [u32; 1] = [event_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) event_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) event_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -48949,21 +57018,33 @@ pub unsafe extern "C" fn nt_worker_factory_worker_ready(worker_factory_handle: H
 pub unsafe fn nt_worker_factory_worker_ready(worker_factory_handle: HANDLE) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0xF253D0F8_u32);
     let syscall_addr = sw3_get_random_syscall_address(0xF253D0F8_u32);
-    let params: [u32; 1] = [worker_factory_handle as u32];
     let status: i32;
 
-    core::arch::asm!(
-        "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 4",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-        params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+        "push {p0}",
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 8",
+            gate = in(reg) wow64_gate as u32,
+        p0 = in(reg) worker_factory_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push {p0}",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 4",
+            addr = in(reg) syscall_addr as u32,
+        p0 = in(reg) worker_factory_handle as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -49047,22 +57128,23 @@ pub unsafe fn nt_write_file(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x89389B8F_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x89389B8F_u32);
-    let params: [u32; 9] = unsafe {
-        [
-            file_handle as u32,
-            event as u32,
-            core::mem::transmute::<_, u32>(apc_routine),
-            apc_context as u32,
-            io_status_block as u32,
-            buffer as u32,
-            length as u32,
-            byte_offset as u32,
-            key as u32,
-        ]
-    };
+    let params: [u32; 9] = [
+        file_handle as u32,
+        event as u32,
+        core::mem::transmute::<_, u32>(apc_routine),
+        apc_context as u32,
+        io_status_block as u32,
+        buffer as u32,
+        length as u32,
+        byte_offset as u32,
+        key as u32,
+    ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 32]",
         "push dword ptr [{params_ptr} + 28]",
         "push dword ptr [{params_ptr} + 24]",
@@ -49072,16 +57154,34 @@ pub unsafe fn nt_write_file(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 36",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 40",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 36",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -49165,22 +57265,23 @@ pub unsafe fn nt_write_file_gather(
 ) -> NTSTATUS {
     let syscall_num = sw3_get_syscall_number(0x17B66577_u32);
     let syscall_addr = sw3_get_random_syscall_address(0x17B66577_u32);
-    let params: [u32; 9] = unsafe {
-        [
-            file_handle as u32,
-            event as u32,
-            core::mem::transmute::<_, u32>(apc_routine),
-            apc_context as u32,
-            io_status_block as u32,
-            segment_array as u32,
-            length as u32,
-            byte_offset as u32,
-            key as u32,
-        ]
-    };
+    let params: [u32; 9] = [
+        file_handle as u32,
+        event as u32,
+        core::mem::transmute::<_, u32>(apc_routine),
+        apc_context as u32,
+        io_status_block as u32,
+        segment_array as u32,
+        length as u32,
+        byte_offset as u32,
+        key as u32,
+    ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 32]",
         "push dword ptr [{params_ptr} + 28]",
         "push dword ptr [{params_ptr} + 24]",
@@ -49190,16 +57291,34 @@ pub unsafe fn nt_write_file_gather(
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 36",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 40",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 32]",
+        "push dword ptr [{params_ptr} + 28]",
+        "push dword ptr [{params_ptr} + 24]",
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 36",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -49287,23 +57406,41 @@ pub unsafe fn nt_write_request_data(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 20]",
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 24",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 28",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 20]",
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 24",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -49388,22 +57525,39 @@ pub unsafe fn nt_write_virtual_memory(
     ];
     let status: i32;
 
-    core::arch::asm!(
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
         "push dword ptr [{params_ptr} + 16]",
         "push dword ptr [{params_ptr} + 12]",
         "push dword ptr [{params_ptr} + 8]",
         "push dword ptr [{params_ptr} + 4]",
         "push dword ptr [{params_ptr} + 0]",
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 20",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 24",
+            gate = in(reg) wow64_gate as u32,
         params_ptr = in(reg) params.as_ptr(),
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+        "push dword ptr [{params_ptr} + 16]",
+        "push dword ptr [{params_ptr} + 12]",
+        "push dword ptr [{params_ptr} + 8]",
+        "push dword ptr [{params_ptr} + 4]",
+        "push dword ptr [{params_ptr} + 0]",
+            "mov edx, esp",
+            "call {addr}",
+            "add esp, 20",
+            addr = in(reg) syscall_addr as u32,
+        params_ptr = in(reg) params.as_ptr(),
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 
@@ -49469,18 +57623,26 @@ pub unsafe fn nt_yield_execution() -> NTSTATUS {
     let syscall_addr = sw3_get_random_syscall_address(0x0C922A07_u32);
     let status: i32;
 
-    core::arch::asm!(
-
-        "mov eax, {num}",
-        "mov edx, esp",
-        "call {addr}",
-        "add esp, 0",
-        num = in(reg) syscall_num,
-        addr = in(reg) syscall_addr as u32,
-
-        lateout("eax") status,
-        clobber_abi("C"),
-    );
+    // WoW64 runtime detection
+    if sw3_is_wow64() {
+        let wow64_gate = sw3_get_wow64_gate();
+        core::arch::asm!(
+            "push 0",  // dummy return address for WoW64
+            "call {gate}",
+            "add esp, 4",
+            gate = in(reg) wow64_gate as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    } else {
+        core::arch::asm!(
+            "mov edx, esp",
+            "call {addr}",
+            addr = in(reg) syscall_addr as u32,
+            inlateout("eax") syscall_num as u32 => status,
+            clobber_abi("C"),
+        );
+    }
     status
 }
 

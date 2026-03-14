@@ -40,8 +40,8 @@ fn main() {
         .write_all(wrappers.as_bytes())
         .expect("Failed to write wrappers");
 
-    println!(
-        "cargo:warning=Generated {} with {} functions",
+    eprintln!(
+        "Generated {} with {} functions",
         output_header,
         functions.len()
     );
@@ -222,7 +222,7 @@ fn rust_to_c_type(rust_type: &str) -> String {
         "PPORT_SECTION_WRITE" => "SW3_PPORT_SECTION_WRITE".to_string(),
         "PPORT_SECTION_READ" => "SW3_PPORT_SECTION_READ".to_string(),
         "PRTL_ATOM" => "SW3_PRTL_ATOM".to_string(),
-        "RTL_ATOM" => "SW3_RTL_ATOM".to_string(),
+        "RTL_ATOM" => "SW3_RTL_ATOM".to_string(), // uint16_t, not void*
         "PALPC_MESSAGE_ATTRIBUTES" => "SW3_PALPC_MESSAGE_ATTRIBUTES".to_string(),
         "PALPC_CONTEXT_ATTR" => "SW3_PALPC_CONTEXT_ATTR".to_string(),
         "PALPC_DATA_VIEW_ATTR" => "SW3_PALPC_DATA_VIEW_ATTR".to_string(),
@@ -571,8 +571,12 @@ const HEADER_PREAMBLE: &str = r#"/**
     #error "Unsupported architecture - only x86 and x64 are supported"
 #endif
 
-/* WOW64 detection (x86 process on x64 system) */
-#if SYSCALLS_X86 && (defined(_WIN64) || defined(__LP64__))
+/* WOW64 detection - compile-time flag only.
+ * WOW64 (x86 process on x64 OS) CANNOT be detected at compile time,
+ * because _WIN64 is never defined in x86 compilation.
+ * Define SYSCALLS_FORCE_WOW64 manually if building for WOW64 target.
+ * For runtime detection use IsWow64Process() or NtQueryInformationProcess(). */
+#ifdef SYSCALLS_FORCE_WOW64
     #define SYSCALLS_WOW64 1
 #else
     #define SYSCALLS_WOW64 0
@@ -798,11 +802,9 @@ fn generate_opaque_types(h: &mut String) {
         ("SW3_PPLUGPLAY_EVENT_BLOCK", "PPLUGPLAY_EVENT_BLOCK"),
         ("SW3_PPORT_SECTION_WRITE", "PPORT_SECTION_WRITE"),
         ("SW3_PPORT_SECTION_READ", "PPORT_SECTION_READ"),
-        ("SW3_PRTL_ATOM", "PRTL_ATOM"),
         ("SW3_PALPC_CONTEXT_ATTR", "PALPC_CONTEXT_ATTR"),
         ("SW3_PALPC_DATA_VIEW_ATTR", "PALPC_DATA_VIEW_ATTR"),
         ("SW3_PALPC_SECURITY_ATTR", "PALPC_SECURITY_ATTR"),
-        ("SW3_RTL_ATOM", "RTL_ATOM"),
         ("SW3_PTOKEN_USER", "PTOKEN_USER"),
         ("SW3_PTOKEN_OWNER", "PTOKEN_OWNER"),
         ("SW3_PTOKEN_PRIMARY_GROUP", "PTOKEN_PRIMARY_GROUP"),
@@ -841,6 +843,19 @@ fn generate_opaque_types(h: &mut String) {
         h.push_str("#endif\n");
     }
 
+    // RTL_ATOM is uint16_t, not a pointer -- define it separately
+    h.push_str("\n/* RTL_ATOM is a 16-bit value, not a pointer */\n");
+    h.push_str("typedef uint16_t SW3_RTL_ATOM;\n");
+    h.push_str("typedef uint16_t* SW3_PRTL_ATOM;\n");
+    h.push_str("#if !SYSCALLS_WINDOWS_SDK_DETECTED\n");
+    h.push_str("#ifndef RTL_ATOM\n");
+    h.push_str("#define RTL_ATOM SW3_RTL_ATOM\n");
+    h.push_str("#endif\n");
+    h.push_str("#ifndef PRTL_ATOM\n");
+    h.push_str("#define PRTL_ATOM SW3_PRTL_ATOM\n");
+    h.push_str("#endif\n");
+    h.push_str("#endif\n");
+
     h.push('\n');
 }
 
@@ -850,17 +865,9 @@ fn generate_structs(h: &mut String, structs: &[(String, Vec<(String, String)>)])
     h.push_str("/* Using SW3_ prefix to avoid conflicts with Windows SDK */\n\n");
 
     // Add missing pointer types that are always needed
-    h.push_str("/* Missing SW3 pointer types - always available */\n");
+    // NOTE: types already defined in opaque_types are NOT repeated here
+    h.push_str("/* Additional SW3 pointer types - always available */\n");
     let missing_types = [
-        ("SW3_PFILE_GET_EA_INFORMATION", "PFILE_GET_EA_INFORMATION"),
-        (
-            "SW3_PFILE_USER_QUOTA_INFORMATION",
-            "PFILE_USER_QUOTA_INFORMATION",
-        ),
-        (
-            "SW3_PFILE_QUOTA_LIST_INFORMATION",
-            "PFILE_QUOTA_LIST_INFORMATION",
-        ),
         ("SW3_PSID", "PSID"),
         ("SW3_PSECURITY_DESCRIPTOR", "PSECURITY_DESCRIPTOR"),
         ("SW3_PACL", "PACL"),
