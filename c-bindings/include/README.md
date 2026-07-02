@@ -4,7 +4,7 @@ C/C++ биндинги для библиотеки прямых системны
 
 ## Особенности
 
-- **519 NT syscalls** — полный набор функций ядра Windows
+- **513 NT syscalls + 6 helper-функций** (519 экспортируемых функций всего)
 - **Автогенерация header** — `syscalls.h` генерируется автоматически из Rust кода
 - **SW3_ префиксы** — все функции имеют префикс SW3_ для избежания конфликтов
 - **Независимость от Windows SDK** — все функции доступны всегда
@@ -13,6 +13,9 @@ C/C++ биндинги для библиотеки прямых системны
 - **Jumper Randomized** — рандомизация адресов возврата для обхода stack tracing
 - **C/C++ совместимость** — полная поддержка обоих языков
 - **Stable Rust** — работает на стабильном Rust без nightly
+- **WoW64 inspect/manipulate helpers** — header-only `wow64_helpers.h` для работы
+  с x86-таргетами из x64-хоста (PEB32 walk, export resolve с forwarder'ами,
+  WOW64_CONTEXT)
 
 ## Сборка
 
@@ -20,15 +23,16 @@ C/C++ биндинги для библиотеки прямых системны
 cargo build --release
 ```
 
-Выходные файлы:
+Выходные файлы (release, x64):
 ```
 target/release/
-├── syscalls.lib      # Статическая библиотека (6+ MB)
-├── syscalls.dll      # Динамическая библиотека (~400 KB)
-└── syscalls.dll.lib  # Import library для DLL
+├── syscalls.lib      # Статическая библиотека (~3.5 MB)
+├── syscalls.dll      # Динамическая библиотека (~245 KB)
+└── syscalls.dll.lib  # Import library для DLL (~124 KB)
 
 include/
-└── syscalls.h        # Автосгенерированный C header (3500+ строк)
+├── syscalls.h        # Автосгенерированный C header (~6.2K строк)
+└── wow64_helpers.h   # Header-only утилиты для работы с WoW64-целями
 ```
 
 ## Использование в C/C++
@@ -193,8 +197,9 @@ c-bindings/
 ├── build.rs          # Парсер Rust → C header (автогенерация)
 ├── src/lib.rs        # Re-export syscalls
 ├── include/
-│   └── syscalls.h    # Автосгенерированный header (3500+ строк)
-├── examples/         # Примеры использования
+│   ├── syscalls.h        # Автосгенерированный header (~6.2K строк)
+│   └── wow64_helpers.h   # Header-only утилиты для WoW64-целей
+├── examples/         # Примеры использования (включая wow64_inspect.c)
 ├── Cargo.toml
 └── README.md
 ```
@@ -257,7 +262,7 @@ InitializeObjectAttributes  // мапится на SW3_InitializeObjectAttribute
 | **Синхронизация** | `SW3NtWaitForSingleObject`, `SW3NtWaitForMultipleObjects`, `SW3NtCreateEvent`, `SW3NtSetEvent`, `SW3NtCreateMutant` |
 | **Система** | `SW3NtQuerySystemInformation`, `SW3NtQuerySystemTime`, `SW3NtSetSystemTime` |
 
-**Полный список — 519 функций в `syscalls.h`.**
+**Полный список — 513 NT syscalls (+6 helper-функций) в `syscalls.h`.**
 
 ### Коды ошибок NTSTATUS
 
@@ -277,6 +282,62 @@ STATUS_SUCCESS                  // мапится на SW3_STATUS_SUCCESS
 STATUS_ACCESS_DENIED            // мапится на SW3_STATUS_ACCESS_DENIED
 // и т.д.
 ```
+
+## WoW64 helpers (`wow64_helpers.h`)
+
+Header-only утилиты для работы с **WoW64 (x86) процессами из x64-хоста**: ваш
+exe собран как x64, использует эту DLL и читает/пишет память / инспектирует
+модули / снимает регистры в 32-битной цели. Не требует Windows SDK для самих
+структур (имеет параллельные `SW3_PEB32` / `SW3_LDR_DATA_TABLE_ENTRY32` /
+`SW3_WOW64_CONTEXT` / PE32 заголовки), макросы `WOW64_CONTEXT_*` обёрнуты в
+`#ifndef` для бесконфликтного сосуществования с `<windows.h>`.
+
+### Что покрывает
+
+| API | Назначение |
+|-----|-----------|
+| `sw3_wow64_detect` | определить, что цель WoW64, и сразу взять адрес PEB32 |
+| `sw3_wow64_read_peb` | прочитать PEB32 целиком |
+| `sw3_wow64_enum_modules` | обход `InLoadOrderModuleList` с callback'ом |
+| `sw3_wow64_find_module` / `_w` | найти модуль по ASCII или UTF-16 имени |
+| `sw3_wow64_resolve_export` | резолв `Dll!Func` **с автоматическим следованием за forwarder'ами** (`kernel32!LoadLibraryA` → `KernelBase!LoadLibraryA`) |
+| `sw3_wow64_resolve_export_in` | то же, но с готовым `dll_base` |
+| `sw3_wow64_get_thread_context` | реальные x86 регистры (info class 29) |
+| `sw3_wow64_set_thread_context` | запись x86 регистров |
+| `sw3_wow64_suspend_and_get_context` | suspend → get (оставляет поток suspended) |
+| `sw3_wow64_atomic_set_context` | suspend → set → resume |
+| `sw3_wow64_read` / `sw3_wow64_write` | I/O памяти по 32-битным адресам (zero-extend в `PVOID`) |
+
+### Минимальный пример
+
+```c
+#include "syscalls.h"
+#include "wow64_helpers.h"
+
+HANDLE hProc = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
+                           FALSE, target_pid);
+
+bool is_wow64 = false;
+uint32_t peb32 = 0;
+sw3_wow64_detect((SW3_HANDLE)hProc, &is_wow64, &peb32);
+if (!is_wow64) { /* цель чистый x64 */ return 0; }
+
+uint32_t load_library_a = 0;
+sw3_wow64_resolve_export((SW3_HANDLE)hProc, peb32,
+                         "kernel32.dll", "LoadLibraryA",
+                         &load_library_a);
+// load_library_a — x86-адрес в target-памяти,
+// пригодный как StartRoutine для NtCreateThreadEx
+```
+
+Полный демо-пример: `examples/wow64_inspect.c` (перечисление модулей, резолв
+экспортов с forwarder'ами, снапшот x86-контекста главного потока).
+
+### Что НЕ покрыто
+
+- Ordinal-only forwards (`"DLL.#42"`) — редкий формат, не обрабатывается
+- Manual mapping x86 PE-образа
+- Heaven's Gate (исполнение x64 кода внутри WoW64-процесса)
 
 ## Режимы совместимости
 

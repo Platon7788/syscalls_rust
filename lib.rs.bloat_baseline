@@ -38,12 +38,6 @@
 #![allow(clippy::unnecessary_cast)]
 #![allow(clippy::missing_transmute_annotations)]
 #![allow(static_mut_refs)]
-// Edition 2024 turns `unsafe_op_in_unsafe_fn` into a warn-by-default lint.
-// This crate is inherently unsafe end-to-end (inline asm, raw ptr walks over
-// PEB/PE, static-mut syscall table, FFI). Wrapping each op in `unsafe {}`
-// adds noise without safety value — safety invariants are documented per
-// function, not per operation.
-#![allow(unsafe_op_in_unsafe_fn)]
 
 // Error handling module
 pub mod error;
@@ -1259,7 +1253,6 @@ pub unsafe fn sw3_get_random_syscall_address(function_hash: u32) -> PVOID {
 /// Hash: 0x2E4827D6
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_accept_connect_port(
     server_port_handle: *mut HANDLE,
     alternative_receive_port_handle: ULONG,
@@ -1382,7 +1375,6 @@ pub unsafe fn nt_accept_connect_port(
 /// Hash: 0x1E9C0921
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_access_check(
     p_security_descriptor: PSECURITY_DESCRIPTOR,
     client_token: HANDLE,
@@ -1515,7 +1507,6 @@ pub unsafe fn nt_access_check(
 /// Hash: 0x78577EFE
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_access_check_and_audit_alarm(
     subsystem_name: PUNICODE_STRING,
     handle_id: PVOID,
@@ -1663,7 +1654,6 @@ pub unsafe fn nt_access_check_and_audit_alarm(
 /// Hash: 0xDB528F63
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_access_check_by_type(
     security_descriptor: PSECURITY_DESCRIPTOR,
     principal_self_sid: PSID,
@@ -1811,7 +1801,6 @@ pub unsafe fn nt_access_check_by_type(
 /// Hash: 0x9A55BA1A
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_access_check_by_type_and_audit_alarm(
     subsystem_name: PUNICODE_STRING,
     handle_id: PVOID,
@@ -1984,7 +1973,6 @@ pub unsafe fn nt_access_check_by_type_and_audit_alarm(
 /// Hash: 0x52F57E6D
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_access_check_by_type_result_list(
     security_descriptor: PSECURITY_DESCRIPTOR,
     principal_self_sid: PSID,
@@ -2132,7 +2120,6 @@ pub unsafe fn nt_access_check_by_type_result_list(
 /// Hash: 0x04A36822
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_access_check_by_type_result_list_and_audit_alarm(
     subsystem_name: PUNICODE_STRING,
     handle_id: PVOID,
@@ -2305,7 +2292,6 @@ pub unsafe fn nt_access_check_by_type_result_list_and_audit_alarm(
 /// Hash: 0x1A562B00
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_access_check_by_type_result_list_and_audit_alarm_by_handle(
     subsystem_name: PUNICODE_STRING,
     handle_id: PVOID,
@@ -2483,7 +2469,6 @@ pub unsafe fn nt_access_check_by_type_result_list_and_audit_alarm_by_handle(
 /// Hash: 0xB2ED8A64
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_acquire_cmf_view_ownership(
     time_stamp: BOOLEAN,
     token_taken: BOOLEAN,
@@ -2590,7 +2575,6 @@ pub unsafe fn nt_acquire_cmf_view_ownership(
 /// Hash: 0x2E8C0916
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_acquire_cross_vm_mutant(
     mutant_handle: HANDLE,
     desired_access: ACCESS_MASK,
@@ -2703,7 +2687,6 @@ pub unsafe fn nt_acquire_cross_vm_mutant(
 /// Hash: 0xAF1B6B3B
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_acquire_process_activity_reference() -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -2789,7 +2772,6 @@ pub unsafe fn nt_acquire_process_activity_reference() -> NTSTATUS {
 /// Hash: 0x9CC88142
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_add_atom(
     atom_name: PWSTR,
     length: ULONG,
@@ -2892,7 +2874,6 @@ pub unsafe fn nt_add_atom(atom_name: PWSTR, length: ULONG, atom: *mut USHORT) ->
 /// Hash: 0x1D8A2936
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_add_atom_ex(
     atom_name: PWSTR,
     length: ULONG,
@@ -3005,7 +2986,6 @@ pub unsafe fn nt_add_atom_ex(
 /// Hash: 0x0F93391C
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_add_boot_entry(boot_entry: PVOID, id: *mut ULONG) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -3100,7 +3080,6 @@ pub unsafe fn nt_add_boot_entry(boot_entry: PVOID, id: *mut ULONG) -> NTSTATUS {
 /// Hash: 0x011A6FCC
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_add_driver_entry(driver_entry: PVOID, id: *mut ULONG) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -3195,7 +3174,6 @@ pub unsafe fn nt_add_driver_entry(driver_entry: PVOID, id: *mut ULONG) -> NTSTAT
 /// Hash: 0xA5947B38
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_adjust_groups_token(
     token_handle: HANDLE,
     reset_to_default: BOOLEAN,
@@ -3318,7 +3296,6 @@ pub unsafe fn nt_adjust_groups_token(
 /// Hash: 0x13B00938
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_adjust_privileges_token(
     token_handle: HANDLE,
     disable_all_privileges: BOOLEAN,
@@ -3441,7 +3418,6 @@ pub unsafe fn nt_adjust_privileges_token(
 /// Hash: 0x078D371F
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_adjust_token_claims_and_device_groups(
     token_handle: HANDLE,
     user_reset_to_default: BOOLEAN,
@@ -3614,7 +3590,6 @@ pub unsafe fn nt_adjust_token_claims_and_device_groups(
 /// Hash: 0xB926E381
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alert_multiple_thread_by_thread_id(
     thread_ids: *mut HANDLE,
     thread_id_count: ULONG,
@@ -3715,7 +3690,6 @@ pub unsafe fn nt_alert_multiple_thread_by_thread_id(
 /// Hash: 0xE4CCFE6A
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alert_resume_thread(
     thread_handle: HANDLE,
     previous_suspend_count: *mut ULONG,
@@ -3816,7 +3790,6 @@ pub unsafe fn nt_alert_resume_thread(
 /// Hash: 0x08A0521D
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alert_thread(thread_handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -3907,7 +3880,6 @@ pub unsafe fn nt_alert_thread(thread_handle: HANDLE) -> NTSTATUS {
 /// Hash: 0x093431A0
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alert_thread_by_thread_id(thread_id: ULONG) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -3998,7 +3970,6 @@ pub unsafe fn nt_alert_thread_by_thread_id(thread_id: ULONG) -> NTSTATUS {
 /// Hash: 0x48946C28
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alert_thread_by_thread_id_ex(
     thread_id: HANDLE,
     flags: ULONG,
@@ -4096,7 +4067,6 @@ pub unsafe fn nt_alert_thread_by_thread_id_ex(thread_id: HANDLE, flags: ULONG) -
 /// Hash: 0x76481AC0
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_allocate_locally_unique_id(luid: PLUID) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -4187,7 +4157,6 @@ pub unsafe fn nt_allocate_locally_unique_id(luid: PLUID) -> NTSTATUS {
 /// Hash: 0x1AB47849
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_allocate_reserve_object(
     memory_reserve_handle: *mut HANDLE,
     object_attributes: POBJECT_ATTRIBUTES,
@@ -4294,7 +4263,6 @@ pub unsafe fn nt_allocate_reserve_object(
 /// Hash: 0x35B75E2C
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_allocate_user_physical_pages(
     process_handle: HANDLE,
     number_of_pages: *mut ULONG,
@@ -4401,7 +4369,6 @@ pub unsafe fn nt_allocate_user_physical_pages(
 /// Hash: 0x6D98BDC0
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_allocate_user_physical_pages_ex(
     process_handle: HANDLE,
     number_of_pages: *mut ULONG_PTR,
@@ -4519,7 +4486,6 @@ pub unsafe fn nt_allocate_user_physical_pages_ex(
 /// Hash: 0x31AB3B37
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_allocate_uuids(
     time: *mut LARGE_INTEGER,
     range: *mut ULONG,
@@ -4632,7 +4598,6 @@ pub unsafe fn nt_allocate_uuids(
 /// Hash: 0x0F993937
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_allocate_virtual_memory(
     process_handle: HANDLE,
     base_address: *mut PVOID,
@@ -4755,7 +4720,6 @@ pub unsafe fn nt_allocate_virtual_memory(
 /// Hash: 0xA8B1FA7B
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_allocate_virtual_memory_ex(
     process_handle: HANDLE,
     lp_address: *mut PVOID,
@@ -4883,7 +4847,6 @@ pub unsafe fn nt_allocate_virtual_memory_ex(
 /// Hash: 0xE3300A6D
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alpc_accept_connect_port(
     port_handle: *mut HANDLE,
     connection_port_handle: HANDLE,
@@ -5021,7 +4984,6 @@ pub unsafe fn nt_alpc_accept_connect_port(
 /// Hash: 0xB5127CBC
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alpc_cancel_message(
     port_handle: HANDLE,
     flags: ULONG,
@@ -5128,7 +5090,6 @@ pub unsafe fn nt_alpc_cancel_message(
 /// Hash: 0x322CC243
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alpc_connect_port(
     port_handle: *mut HANDLE,
     port_name: PUNICODE_STRING,
@@ -5276,7 +5237,6 @@ pub unsafe fn nt_alpc_connect_port(
 /// Hash: 0x666FB434
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alpc_connect_port_ex(
     port_handle: *mut HANDLE,
     connection_port_object_attributes: POBJECT_ATTRIBUTES,
@@ -5424,7 +5384,6 @@ pub unsafe fn nt_alpc_connect_port_ex(
 /// Hash: 0x9CF57BA6
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alpc_create_port(
     port_handle: *mut HANDLE,
     object_attributes: POBJECT_ATTRIBUTES,
@@ -5531,7 +5490,6 @@ pub unsafe fn nt_alpc_create_port(
 /// Hash: 0x06D21C57
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alpc_create_port_section(
     port_handle: HANDLE,
     flags: ULONG,
@@ -5654,7 +5612,6 @@ pub unsafe fn nt_alpc_create_port_section(
 /// Hash: 0x34A4D0A7
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alpc_create_resource_reserve(
     port_handle: HANDLE,
     flags: ULONG,
@@ -5767,7 +5724,6 @@ pub unsafe fn nt_alpc_create_resource_reserve(
 /// Hash: 0x2EB85F43
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alpc_create_section_view(
     port_handle: HANDLE,
     flags: ULONG,
@@ -5874,7 +5830,6 @@ pub unsafe fn nt_alpc_create_section_view(
 /// Hash: 0xF62FEBBE
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alpc_create_security_context(
     port_handle: HANDLE,
     flags: ULONG,
@@ -5981,7 +5936,6 @@ pub unsafe fn nt_alpc_create_security_context(
 /// Hash: 0xD740F7D2
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alpc_delete_port_section(
     port_handle: HANDLE,
     flags: ULONG,
@@ -6088,7 +6042,6 @@ pub unsafe fn nt_alpc_delete_port_section(
 /// Hash: 0xFD7CDE32
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alpc_delete_resource_reserve(
     port_handle: HANDLE,
     flags: ULONG,
@@ -6195,7 +6148,6 @@ pub unsafe fn nt_alpc_delete_resource_reserve(
 /// Hash: 0x152B30B5
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alpc_delete_section_view(
     port_handle: HANDLE,
     flags: ULONG,
@@ -6302,7 +6254,6 @@ pub unsafe fn nt_alpc_delete_section_view(
 /// Hash: 0x9EC1BD6F
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alpc_delete_security_context(
     port_handle: HANDLE,
     flags: ULONG,
@@ -6409,7 +6360,6 @@ pub unsafe fn nt_alpc_delete_security_context(
 /// Hash: 0x64B37F1C
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alpc_disconnect_port(port_handle: HANDLE, flags: ULONG) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -6504,7 +6454,6 @@ pub unsafe fn nt_alpc_disconnect_port(port_handle: HANDLE, flags: ULONG) -> NTST
 /// Hash: 0x66FE432C
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alpc_impersonate_client_container_of_port(
     port_handle: HANDLE,
     message: PPORT_MESSAGE,
@@ -6611,7 +6560,6 @@ pub unsafe fn nt_alpc_impersonate_client_container_of_port(
 /// Hash: 0x3CAD07E2
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alpc_impersonate_client_of_port(
     port_handle: HANDLE,
     message: PPORT_MESSAGE,
@@ -6718,7 +6666,6 @@ pub unsafe fn nt_alpc_impersonate_client_of_port(
 /// Hash: 0xE1BDE820
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alpc_open_sender_process(
     process_handle: *mut HANDLE,
     port_handle: HANDLE,
@@ -6841,7 +6788,6 @@ pub unsafe fn nt_alpc_open_sender_process(
 /// Hash: 0x7AD96661
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alpc_open_sender_thread(
     thread_handle: *mut HANDLE,
     port_handle: HANDLE,
@@ -6964,7 +6910,6 @@ pub unsafe fn nt_alpc_open_sender_thread(
 /// Hash: 0x0294260F
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alpc_query_information(
     port_handle: HANDLE,
     port_information_class: u32,
@@ -7082,7 +7027,6 @@ pub unsafe fn nt_alpc_query_information(
 /// Hash: 0x5DCC5A6E
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alpc_query_information_message(
     port_handle: HANDLE,
     port_message: PPORT_MESSAGE,
@@ -7205,7 +7149,6 @@ pub unsafe fn nt_alpc_query_information_message(
 /// Hash: 0x10940B14
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alpc_revoke_security_context(
     port_handle: HANDLE,
     flags: ULONG,
@@ -7312,7 +7255,6 @@ pub unsafe fn nt_alpc_revoke_security_context(
 /// Hash: 0x5EF3AB92
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alpc_send_wait_receive_port(
     port_handle: HANDLE,
     flags: ULONG,
@@ -7445,7 +7387,6 @@ pub unsafe fn nt_alpc_send_wait_receive_port(
 /// Hash: 0x149D2CD7
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_alpc_set_information(
     port_handle: HANDLE,
     port_information_class: u32,
@@ -7558,7 +7499,6 @@ pub unsafe fn nt_alpc_set_information(
 /// Hash: 0xCD9DA75B
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_apphelp_cache_control(service: u32, service_data: PVOID) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -7653,7 +7593,6 @@ pub unsafe fn nt_apphelp_cache_control(service: u32, service_data: PVOID) -> NTS
 /// Hash: 0x15B00E06
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_are_mapped_files_the_same(
     file1_mapped_as_an_image: PVOID,
     file2_mapped_as_file: PVOID,
@@ -7754,7 +7693,6 @@ pub unsafe fn nt_are_mapped_files_the_same(
 /// Hash: 0xC6922582
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_assign_process_to_job_object(
     job_handle: HANDLE,
     process_handle: HANDLE,
@@ -7855,7 +7793,6 @@ pub unsafe fn nt_assign_process_to_job_object(
 /// Hash: 0x1826E459
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_assign_process_to_silo_object(
     process_handle: HANDLE,
     silo_object_handle: HANDLE,
@@ -7956,7 +7893,6 @@ pub unsafe fn nt_assign_process_to_silo_object(
 /// Hash: 0x9983FD53
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_associate_wait_completion_packet(
     wait_completion_packet_handle: HANDLE,
     io_completion_handle: HANDLE,
@@ -8089,7 +8025,6 @@ pub unsafe fn nt_associate_wait_completion_packet(
 /// Hash: 0x385D10D0
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_call_enclave(
     routine: PENCLAVE_ROUTINE,
     parameter: PVOID,
@@ -8202,7 +8137,6 @@ pub unsafe fn nt_call_enclave(
 /// Hash: 0x0E9C5332
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_callback_return(
     output_buffer: PVOID,
     output_length: ULONG,
@@ -8309,7 +8243,6 @@ pub unsafe fn nt_callback_return(
 /// Hash: 0xCD08E3D2
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_cancel_device_wakeup_request(device_handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -8400,7 +8333,6 @@ pub unsafe fn nt_cancel_device_wakeup_request(device_handle: HANDLE) -> NTSTATUS
 /// Hash: 0xE3B9D16C
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_cancel_io_file(
     file_handle: HANDLE,
     io_status_block: PIO_STATUS_BLOCK,
@@ -8501,7 +8433,6 @@ pub unsafe fn nt_cancel_io_file(
 /// Hash: 0x3AD2FBA8
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_cancel_io_file_ex(
     file_handle: HANDLE,
     io_request_to_cancel: PIO_STATUS_BLOCK,
@@ -8608,7 +8539,6 @@ pub unsafe fn nt_cancel_io_file_ex(
 /// Hash: 0x78A04C72
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_cancel_synchronous_io_file(
     thread_handle: HANDLE,
     io_request_to_cancel: PIO_STATUS_BLOCK,
@@ -8715,7 +8645,6 @@ pub unsafe fn nt_cancel_synchronous_io_file(
 /// Hash: 0x3D9F0734
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_cancel_timer(
     timer_handle: HANDLE,
     current_state: *mut BOOLEAN,
@@ -8813,7 +8742,6 @@ pub unsafe fn nt_cancel_timer(timer_handle: HANDLE, current_state: *mut BOOLEAN)
 /// Hash: 0x09A2CAB3
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_cancel_timer2(timer_handle: HANDLE, parameters: PVOID) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -8908,7 +8836,6 @@ pub unsafe fn nt_cancel_timer2(timer_handle: HANDLE, parameters: PVOID) -> NTSTA
 /// Hash: 0x160C6680
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_cancel_wait_completion_packet(
     wait_completion_packet_handle: HANDLE,
     remove_signaled_packet: BOOLEAN,
@@ -9009,7 +8936,6 @@ pub unsafe fn nt_cancel_wait_completion_packet(
 /// Hash: 0x30F65BE6
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_change_process_state(
     process_state_change_handle: HANDLE,
     process_handle: HANDLE,
@@ -9132,7 +9058,6 @@ pub unsafe fn nt_change_process_state(
 /// Hash: 0x16B47C38
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_change_thread_state(
     thread_state_change_handle: HANDLE,
     thread_handle: HANDLE,
@@ -9255,7 +9180,6 @@ pub unsafe fn nt_change_thread_state(
 /// Hash: 0x08A2C9F1
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_clear_all_savepoints_transaction(
     transaction_handle: HANDLE,
 ) -> NTSTATUS {
@@ -9348,7 +9272,6 @@ pub unsafe fn nt_clear_all_savepoints_transaction(transaction_handle: HANDLE) ->
 /// Hash: 0x2EB4CCE2
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_clear_event(event_handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -9439,7 +9362,6 @@ pub unsafe fn nt_clear_event(event_handle: HANDLE) -> NTSTATUS {
 /// Hash: 0x04904045
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_clear_savepoint_transaction(
     transaction_handle: HANDLE,
     save_point_id: ULONG,
@@ -9540,7 +9462,6 @@ pub unsafe fn nt_clear_savepoint_transaction(
 /// Hash: 0x0C9DF7C3
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_close(handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -9631,7 +9552,6 @@ pub unsafe fn nt_close(handle: HANDLE) -> NTSTATUS {
 /// Hash: 0x3AB4322A
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_close_object_audit_alarm(
     subsystem_name: PUNICODE_STRING,
     handle_id: PVOID,
@@ -9738,7 +9658,6 @@ pub unsafe fn nt_close_object_audit_alarm(
 /// Hash: 0xD729BFE5
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_commit_complete(
     enlistment_handle: HANDLE,
     tm_virtual_clock: *mut LARGE_INTEGER,
@@ -9839,7 +9758,6 @@ pub unsafe fn nt_commit_complete(
 /// Hash: 0xFB3CD8EB
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_commit_enlistment(
     enlistment_handle: HANDLE,
     tm_virtual_clock: *mut LARGE_INTEGER,
@@ -9940,7 +9858,6 @@ pub unsafe fn nt_commit_enlistment(
 /// Hash: 0x0299020B
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_commit_registry_transaction(
     registry_handle: HANDLE,
     wait: BOOL,
@@ -10038,7 +9955,6 @@ pub unsafe fn nt_commit_registry_transaction(registry_handle: HANDLE, wait: BOOL
 /// Hash: 0x8F1BAA48
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_commit_transaction(
     transaction_handle: HANDLE,
     wait: BOOLEAN,
@@ -10136,7 +10052,6 @@ pub unsafe fn nt_commit_transaction(transaction_handle: HANDLE, wait: BOOLEAN) -
 /// Hash: 0x3D9DD686
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_compact_keys(count: ULONG, key_array: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -10231,7 +10146,6 @@ pub unsafe fn nt_compact_keys(count: ULONG, key_array: HANDLE) -> NTSTATUS {
 /// Hash: 0x632C877D
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_compare_objects(
     first_object_handle: HANDLE,
     second_object_handle: HANDLE,
@@ -10332,7 +10246,6 @@ pub unsafe fn nt_compare_objects(
 /// Hash: 0x142AC56E
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_compare_signing_levels(
     unknown_parameter1: ULONG,
     unknown_parameter2: ULONG,
@@ -10433,7 +10346,6 @@ pub unsafe fn nt_compare_signing_levels(
 /// Hash: 0x6DA94D7B
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_compare_tokens(
     first_token_handle: HANDLE,
     second_token_handle: HANDLE,
@@ -10540,7 +10452,6 @@ pub unsafe fn nt_compare_tokens(
 /// Hash: 0x22FD5172
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_complete_connect_port(port_handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -10631,7 +10542,6 @@ pub unsafe fn nt_complete_connect_port(port_handle: HANDLE) -> NTSTATUS {
 /// Hash: 0x754C9B3B
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_compress_key(key: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -10722,7 +10632,6 @@ pub unsafe fn nt_compress_key(key: HANDLE) -> NTSTATUS {
 /// Hash: 0x2CB0A9AE
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_connect_port(
     port_handle: *mut HANDLE,
     port_name: PUNICODE_STRING,
@@ -10855,7 +10764,6 @@ pub unsafe fn nt_connect_port(
 /// Hash: 0x32A65929
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_continue(context_record: PCONTEXT, test_alert: BOOLEAN) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -10950,7 +10858,6 @@ pub unsafe fn nt_continue(context_record: PCONTEXT, test_alert: BOOLEAN) -> NTST
 /// Hash: 0x518E9532
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_continue_ex(
     context_record: PCONTEXT,
     continue_argument: PVOID,
@@ -11048,7 +10955,6 @@ pub unsafe fn nt_continue_ex(context_record: PCONTEXT, continue_argument: PVOID)
 /// Hash: 0x7B8A7513
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_convert_between_auxiliary_counter_and_performance_counter(
     unknown_parameter1: ULONG,
     unknown_parameter2: ULONG,
@@ -11161,7 +11067,6 @@ pub unsafe fn nt_convert_between_auxiliary_counter_and_performance_counter(
 /// Hash: 0x909C0E9E
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_copy_file_chunk(
     source_handle: HANDLE,
     destination_handle: HANDLE,
@@ -11304,7 +11209,6 @@ pub unsafe fn nt_copy_file_chunk(
 /// Hash: 0x1E941E07
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_cpu_partition(
     partition_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -11411,7 +11315,6 @@ pub unsafe fn nt_create_cpu_partition(
 /// Hash: 0x025513F8
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_cross_vm_event() -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -11497,7 +11400,6 @@ pub unsafe fn nt_create_cross_vm_event() -> NTSTATUS {
 /// Hash: 0x8E4BE7AE
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_cross_vm_mutant(
     mutant_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -11610,7 +11512,6 @@ pub unsafe fn nt_create_cross_vm_mutant(
 /// Hash: 0x6AB96A25
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_debug_object(
     debug_object_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -11723,7 +11624,6 @@ pub unsafe fn nt_create_debug_object(
 /// Hash: 0x2806389A
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_directory_object(
     directory_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -11830,7 +11730,6 @@ pub unsafe fn nt_create_directory_object(
 /// Hash: 0x909C23A7
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_directory_object_ex(
     directory_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -11948,7 +11847,6 @@ pub unsafe fn nt_create_directory_object_ex(
 /// Hash: 0x7EAF9EE4
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_enclave(
     process_handle: HANDLE,
     base_address: PVOID,
@@ -12086,7 +11984,6 @@ pub unsafe fn nt_create_enclave(
 /// Hash: 0x7FE38390
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_enlistment(
     enlistment_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -12219,7 +12116,6 @@ pub unsafe fn nt_create_enlistment(
 /// Hash: 0x0E4BF4CD
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_event(
     event_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -12337,7 +12233,6 @@ pub unsafe fn nt_create_event(
 /// Hash: 0x308EA689
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_event_pair(
     event_pair_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -12444,7 +12339,6 @@ pub unsafe fn nt_create_event_pair(
 /// Hash: 0x46F4885F
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_file(
     file_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -12592,7 +12486,6 @@ pub unsafe fn nt_create_file(
 /// Hash: 0xFDA71FF4
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_ir_timer(
     timer_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -12693,7 +12586,6 @@ pub unsafe fn nt_create_ir_timer(
 /// Hash: 0x0C0B4CD9
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_io_completion(
     io_completion_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -12806,7 +12698,6 @@ pub unsafe fn nt_create_io_completion(
 /// Hash: 0xE0B88879
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_io_ring(
     io_ring_handle: *mut HANDLE,
     create_parameters: PVOID,
@@ -12919,7 +12810,6 @@ pub unsafe fn nt_create_io_ring(
 /// Hash: 0x09ABFCE9
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_job_object(
     job_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -13026,7 +12916,6 @@ pub unsafe fn nt_create_job_object(
 /// Hash: 0x1C90FAC2
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_job_set(
     num_job: ULONG,
     user_job_set: PJOB_SET_ARRAY,
@@ -13133,7 +13022,6 @@ pub unsafe fn nt_create_job_set(
 /// Hash: 0xE12ADA88
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_key(
     key_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -13261,7 +13149,6 @@ pub unsafe fn nt_create_key(
 /// Hash: 0xFCDCE662
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_key_transacted(
     key_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -13394,7 +13281,6 @@ pub unsafe fn nt_create_key_transacted(
 /// Hash: 0x306BD700
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_keyed_event(
     keyed_event_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -13507,7 +13393,6 @@ pub unsafe fn nt_create_keyed_event(
 /// Hash: 0xE5D9B0FA
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_low_box_token(
     token_handle: *mut HANDLE,
     existing_token_handle: HANDLE,
@@ -13645,7 +13530,6 @@ pub unsafe fn nt_create_low_box_token(
 /// Hash: 0xB038A08E
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_mailslot_file(
     file_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -13778,7 +13662,6 @@ pub unsafe fn nt_create_mailslot_file(
 /// Hash: 0x34B628D6
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_mutant(
     mutant_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -13891,7 +13774,6 @@ pub unsafe fn nt_create_mutant(
 /// Hash: 0x22B5F488
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_named_pipe_file(
     file_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -14054,7 +13936,6 @@ pub unsafe fn nt_create_named_pipe_file(
 /// Hash: 0xA8327878
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_paging_file(
     page_file_name: PUNICODE_STRING,
     minimum_size: *mut u64,
@@ -14167,7 +14048,6 @@ pub unsafe fn nt_create_paging_file(
 /// Hash: 0xC29BC00B
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_partition(
     partition_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -14280,7 +14160,6 @@ pub unsafe fn nt_create_partition(
 /// Hash: 0x6AFF554C
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_port(
     port_handle: *mut HANDLE,
     object_attributes: POBJECT_ATTRIBUTES,
@@ -14398,7 +14277,6 @@ pub unsafe fn nt_create_port(
 /// Hash: 0x38904B4F
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_private_namespace(
     namespace_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -14511,7 +14389,6 @@ pub unsafe fn nt_create_private_namespace(
 /// Hash: 0x05876668
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_process(
     process_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -14644,7 +14521,6 @@ pub unsafe fn nt_create_process(
 /// Hash: 0x87EF41D0
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_process_ex(
     process_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -14782,7 +14658,6 @@ pub unsafe fn nt_create_process_ex(
 /// Hash: 0x22BF1B22
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_process_state_change(
     process_state_change_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -14900,7 +14775,6 @@ pub unsafe fn nt_create_process_state_change(
 /// Hash: 0x36BE6006
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_profile(
     profile_handle: *mut HANDLE,
     process: HANDLE,
@@ -15038,7 +14912,6 @@ pub unsafe fn nt_create_profile(
 /// Hash: 0x42B990E3
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_profile_ex(
     profile_handle: *mut HANDLE,
     process: HANDLE,
@@ -15181,7 +15054,6 @@ pub unsafe fn nt_create_profile_ex(
 /// Hash: 0x408A0653
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_registry_transaction(
     handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -15294,7 +15166,6 @@ pub unsafe fn nt_create_registry_transaction(
 /// Hash: 0x07A6251A
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_resource_manager(
     resource_manager_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -15422,7 +15293,6 @@ pub unsafe fn nt_create_resource_manager(
 /// Hash: 0x02AB0433
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_section(
     section_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -15550,7 +15420,6 @@ pub unsafe fn nt_create_section(
 /// Hash: 0xFC9933DF
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_section_ex(
     section_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -15688,7 +15557,6 @@ pub unsafe fn nt_create_section_ex(
 /// Hash: 0xCA982019
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_semaphore(
     semaphore_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -15806,7 +15674,6 @@ pub unsafe fn nt_create_semaphore(
 /// Hash: 0x5C905A0D
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_silo_object(
     silo_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -15913,7 +15780,6 @@ pub unsafe fn nt_create_silo_object(
 /// Hash: 0x84198C85
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_symbolic_link_object(
     link_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -16026,7 +15892,6 @@ pub unsafe fn nt_create_symbolic_link_object(
 /// Hash: 0x08B4D28A
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_thread(
     thread_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -16159,7 +16024,6 @@ pub unsafe fn nt_create_thread(
 /// Hash: 0xD63F0B79
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_thread_ex(
     thread_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -16307,7 +16171,6 @@ pub unsafe fn nt_create_thread_ex(
 /// Hash: 0xFFBC0BED
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_thread_state_change(
     thread_state_change_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -16425,7 +16288,6 @@ pub unsafe fn nt_create_thread_state_change(
 /// Hash: 0x258F112E
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_timer(
     timer_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -16538,7 +16400,6 @@ pub unsafe fn nt_create_timer(
 /// Hash: 0x0BAB6C3B
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_timer2(
     timer_handle: *mut HANDLE,
     reserved1: PVOID,
@@ -16656,7 +16517,6 @@ pub unsafe fn nt_create_timer2(
 /// Hash: 0x0CB0F53B
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_token(
     token_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -16814,7 +16674,6 @@ pub unsafe fn nt_create_token(
 /// Hash: 0x798BA5DF
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_token_ex(
     token_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -16992,7 +16851,6 @@ pub unsafe fn nt_create_token_ex(
 /// Hash: 0x0682380F
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_transaction(
     transaction_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -17135,7 +16993,6 @@ pub unsafe fn nt_create_transaction(
 /// Hash: 0x07375715
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_transaction_manager(
     tm_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -17258,7 +17115,6 @@ pub unsafe fn nt_create_transaction_manager(
 /// Hash: 0x82027D6F
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_user_process(
     process_handle: *mut HANDLE,
     thread_handle: *mut HANDLE,
@@ -17406,7 +17262,6 @@ pub unsafe fn nt_create_user_process(
 /// Hash: 0x803FAE9D
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_wait_completion_packet(
     wait_completion_packet_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -17513,7 +17368,6 @@ pub unsafe fn nt_create_wait_completion_packet(
 /// Hash: 0x6476821D
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_waitable_port(
     port_handle: *mut HANDLE,
     object_attributes: POBJECT_ATTRIBUTES,
@@ -17631,7 +17485,6 @@ pub unsafe fn nt_create_waitable_port(
 /// Hash: 0xCF1DA8C4
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_wnf_state_name(
     state_name: PCWNF_STATE_NAME,
     name_lifetime: u32,
@@ -17759,7 +17612,6 @@ pub unsafe fn nt_create_wnf_state_name(
 /// Hash: 0x02EF3046
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_create_worker_factory(
     worker_factory_handle_return: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -17902,7 +17754,6 @@ pub unsafe fn nt_create_worker_factory(
 /// Hash: 0x4DDF5E50
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_debug_active_process(
     process_handle: HANDLE,
     debug_object_handle: HANDLE,
@@ -18003,7 +17854,6 @@ pub unsafe fn nt_debug_active_process(
 /// Hash: 0x189CFB10
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_debug_continue(
     debug_object_handle: HANDLE,
     client_id: PCLIENT_ID,
@@ -18110,7 +17960,6 @@ pub unsafe fn nt_debug_continue(
 /// Hash: 0xF269F2FB
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_delay_execution(
     alertable: BOOLEAN,
     delay_interval: *mut LARGE_INTEGER,
@@ -18211,7 +18060,6 @@ pub unsafe fn nt_delay_execution(
 /// Hash: 0xBD6BFEB5
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_delete_atom(atom: USHORT) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -18302,7 +18150,6 @@ pub unsafe fn nt_delete_atom(atom: USHORT) -> NTSTATUS {
 /// Hash: 0x0989EEE0
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_delete_boot_entry(id: ULONG) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -18393,7 +18240,6 @@ pub unsafe fn nt_delete_boot_entry(id: ULONG) -> NTSTATUS {
 /// Hash: 0x19B5091A
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_delete_driver_entry(id: ULONG) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -18484,7 +18330,6 @@ pub unsafe fn nt_delete_driver_entry(id: ULONG) -> NTSTATUS {
 /// Hash: 0xD978CFC5
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_delete_file(object_attributes: POBJECT_ATTRIBUTES) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -18575,7 +18420,6 @@ pub unsafe fn nt_delete_file(object_attributes: POBJECT_ATTRIBUTES) -> NTSTATUS 
 /// Hash: 0x67F296A5
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_delete_key(key_handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -18666,7 +18510,6 @@ pub unsafe fn nt_delete_key(key_handle: HANDLE) -> NTSTATUS {
 /// Hash: 0x9C12F884
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_delete_object_audit_alarm(
     subsystem_name: PUNICODE_STRING,
     handle_id: PVOID,
@@ -18773,7 +18616,6 @@ pub unsafe fn nt_delete_object_audit_alarm(
 /// Hash: 0x16B42729
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_delete_private_namespace(namespace_handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -18864,7 +18706,6 @@ pub unsafe fn nt_delete_private_namespace(namespace_handle: HANDLE) -> NTSTATUS 
 /// Hash: 0x885D7C2F
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_delete_value_key(
     key_handle: HANDLE,
     value_name: PUNICODE_STRING,
@@ -18962,7 +18803,6 @@ pub unsafe fn nt_delete_value_key(key_handle: HANDLE, value_name: PUNICODE_STRIN
 /// Hash: 0xE69CC853
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_delete_wnf_state_data(
     state_name: PCWNF_STATE_NAME,
     explicit_scope: PVOID,
@@ -19063,7 +18903,6 @@ pub unsafe fn nt_delete_wnf_state_data(
 /// Hash: 0xFC92D746
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_delete_wnf_state_name(state_name: PCWNF_STATE_NAME) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -19154,7 +18993,6 @@ pub unsafe fn nt_delete_wnf_state_name(state_name: PCWNF_STATE_NAME) -> NTSTATUS
 /// Hash: 0x7C247C82
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_device_io_control_file(
     file_handle: HANDLE,
     event: HANDLE,
@@ -19297,7 +19135,6 @@ pub unsafe fn nt_device_io_control_file(
 /// Hash: 0xDF83D415
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_direct_graphics_call(
     call_number: ULONG,
     input_buffer: PVOID,
@@ -19415,7 +19252,6 @@ pub unsafe fn nt_direct_graphics_call(
 /// Hash: 0x4575C942
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_disable_last_known_good() -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -19501,7 +19337,6 @@ pub unsafe fn nt_disable_last_known_good() -> NTSTATUS {
 /// Hash: 0x52E51A44
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_display_string(string: PUNICODE_STRING) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -19592,7 +19427,6 @@ pub unsafe fn nt_display_string(string: PUNICODE_STRING) -> NTSTATUS {
 /// Hash: 0xEF7FF4F1
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_draw_text(string: PUNICODE_STRING) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -19683,7 +19517,6 @@ pub unsafe fn nt_draw_text(string: PUNICODE_STRING) -> NTSTATUS {
 /// Hash: 0x02209C2D
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_duplicate_object(
     source_process_handle: HANDLE,
     source_handle: HANDLE,
@@ -19811,7 +19644,6 @@ pub unsafe fn nt_duplicate_object(
 /// Hash: 0xF5651B26
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_duplicate_token(
     existing_token_handle: HANDLE,
     desired_access: ACCESS_MASK,
@@ -19934,7 +19766,6 @@ pub unsafe fn nt_duplicate_token(
 /// Hash: 0x78D55656
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_enable_last_known_good() -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -20020,7 +19851,6 @@ pub unsafe fn nt_enable_last_known_good() -> NTSTATUS {
 /// Hash: 0x4B127491
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_enumerate_boot_entries(
     buffer: PVOID,
     buffer_length: *mut ULONG,
@@ -20118,7 +19948,6 @@ pub unsafe fn nt_enumerate_boot_entries(buffer: PVOID, buffer_length: *mut ULONG
 /// Hash: 0x0C8C1D0F
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_enumerate_driver_entries(
     buffer: PVOID,
     buffer_length: *mut ULONG,
@@ -20216,7 +20045,6 @@ pub unsafe fn nt_enumerate_driver_entries(buffer: PVOID, buffer_length: *mut ULO
 /// Hash: 0x3AFA675F
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_enumerate_key(
     key_handle: HANDLE,
     index: ULONG,
@@ -20339,7 +20167,6 @@ pub unsafe fn nt_enumerate_key(
 /// Hash: 0x4DDF2922
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_enumerate_system_environment_values_ex(
     information_class: ULONG,
     buffer: PVOID,
@@ -20446,7 +20273,6 @@ pub unsafe fn nt_enumerate_system_environment_values_ex(
 /// Hash: 0xA09CB000
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_enumerate_transaction_object(
     root_object_handle: HANDLE,
     query_type: u32,
@@ -20564,7 +20390,6 @@ pub unsafe fn nt_enumerate_transaction_object(
 /// Hash: 0xBF0384B2
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_enumerate_value_key(
     key_handle: HANDLE,
     index: ULONG,
@@ -20687,7 +20512,6 @@ pub unsafe fn nt_enumerate_value_key(
 /// Hash: 0x148F325B
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_extend_section(
     section_handle: HANDLE,
     new_section_size: *mut LARGE_INTEGER,
@@ -20788,7 +20612,6 @@ pub unsafe fn nt_extend_section(
 /// Hash: 0x098E0F1D
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_filter_boot_option(
     filter_operation: u32,
     object_type: ULONG,
@@ -20906,7 +20729,6 @@ pub unsafe fn nt_filter_boot_option(
 /// Hash: 0x0F957D0E
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_filter_token(
     existing_token_handle: HANDLE,
     flags: ULONG,
@@ -21029,7 +20851,6 @@ pub unsafe fn nt_filter_token(
 /// Hash: 0xF28531DF
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_filter_token_ex(
     token_handle: HANDLE,
     flags: ULONG,
@@ -21192,7 +21013,6 @@ pub unsafe fn nt_filter_token_ex(
 /// Hash: 0xF26B947A
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_find_atom(
     atom_name: PWSTR,
     length: ULONG,
@@ -21295,7 +21115,6 @@ pub unsafe fn nt_find_atom(atom_name: PWSTR, length: ULONG, atom: *mut USHORT) -
 /// Hash: 0xB0BBBE10
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_flush_buffers_file(
     file_handle: HANDLE,
     io_status_block: PIO_STATUS_BLOCK,
@@ -21396,7 +21215,6 @@ pub unsafe fn nt_flush_buffers_file(
 /// Hash: 0x08A94A13
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_flush_buffers_file_ex(
     file_handle: HANDLE,
     flags: ULONG,
@@ -21514,7 +21332,6 @@ pub unsafe fn nt_flush_buffers_file_ex(
 /// Hash: 0xE4B4DBEE
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_flush_install_ui_language(
     install_ui_language: LANGID,
     set_comitted_flag: ULONG,
@@ -21615,7 +21432,6 @@ pub unsafe fn nt_flush_install_ui_language(
 /// Hash: 0x6D2E9F79
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_flush_instruction_cache(
     process_handle: HANDLE,
     base_address: PVOID,
@@ -21722,7 +21538,6 @@ pub unsafe fn nt_flush_instruction_cache(
 /// Hash: 0x272474F9
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_flush_key(key_handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -21813,7 +21628,6 @@ pub unsafe fn nt_flush_key(key_handle: HANDLE) -> NTSTATUS {
 /// Hash: 0x1EAC39FC
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_flush_process_write_buffers() -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -21899,7 +21713,6 @@ pub unsafe fn nt_flush_process_write_buffers() -> NTSTATUS {
 /// Hash: 0x01922903
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_flush_virtual_memory(
     process_handle: HANDLE,
     base_address: PVOID,
@@ -22012,7 +21825,6 @@ pub unsafe fn nt_flush_virtual_memory(
 /// Hash: 0x81BBB915
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_flush_write_buffer() -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -22098,7 +21910,6 @@ pub unsafe fn nt_flush_write_buffer() -> NTSTATUS {
 /// Hash: 0x9DA04E8F
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_free_user_physical_pages(
     process_handle: HANDLE,
     number_of_pages: *mut ULONG,
@@ -22205,7 +22016,6 @@ pub unsafe fn nt_free_user_physical_pages(
 /// Hash: 0x19820515
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_free_virtual_memory(
     process_handle: HANDLE,
     base_address: *mut PVOID,
@@ -22318,7 +22128,6 @@ pub unsafe fn nt_free_virtual_memory(
 /// Hash: 0x0293001B
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_freeze_registry(time_out_in_seconds: ULONG) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -22409,7 +22218,6 @@ pub unsafe fn nt_freeze_registry(time_out_in_seconds: ULONG) -> NTSTATUS {
 /// Hash: 0xC31AF1BD
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_freeze_transactions(
     freeze_timeout: *mut LARGE_INTEGER,
     thaw_timeout: *mut LARGE_INTEGER,
@@ -22510,7 +22318,6 @@ pub unsafe fn nt_freeze_transactions(
 /// Hash: 0xC998BB4F
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_fs_control_file(
     file_handle: HANDLE,
     event: HANDLE,
@@ -22653,7 +22460,6 @@ pub unsafe fn nt_fs_control_file(
 /// Hash: 0xEE9BE608
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_get_cached_signing_level(
     file: HANDLE,
     flags: *mut ULONG,
@@ -22776,7 +22582,6 @@ pub unsafe fn nt_get_cached_signing_level(
 /// Hash: 0x34A2380F
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_get_complete_wnf_state_subscription(
     old_descriptor_state_name: PCWNF_STATE_NAME,
     old_subscription_id: *mut LARGE_INTEGER,
@@ -22899,7 +22704,6 @@ pub unsafe fn nt_get_complete_wnf_state_subscription(
 /// Hash: 0x0B98072B
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_get_context_thread(
     thread_handle: HANDLE,
     thread_context: PCONTEXT,
@@ -22997,7 +22801,6 @@ pub unsafe fn nt_get_context_thread(thread_handle: HANDLE, thread_context: PCONT
 /// Hash: 0x872AB5EA
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_get_current_processor_number() -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -23083,7 +22886,6 @@ pub unsafe fn nt_get_current_processor_number() -> NTSTATUS {
 /// Hash: 0x30C77C12
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_get_current_processor_number_ex(proc_number: *mut ULONG) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -23174,7 +22976,6 @@ pub unsafe fn nt_get_current_processor_number_ex(proc_number: *mut ULONG) -> NTS
 /// Hash: 0x36C8386C
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_get_device_power_state(device: HANDLE, state: *mut u32) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -23269,7 +23070,6 @@ pub unsafe fn nt_get_device_power_state(device: HANDLE, state: *mut u32) -> NTST
 /// Hash: 0xEB74F1FC
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_get_mui_registry_info(
     flags: ULONG,
     data_size: *mut ULONG,
@@ -23376,7 +23176,6 @@ pub unsafe fn nt_get_mui_registry_info(
 /// Hash: 0xE1A3CEF3
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_get_next_process(
     process_handle: HANDLE,
     desired_access: ACCESS_MASK,
@@ -23494,7 +23293,6 @@ pub unsafe fn nt_get_next_process(
 /// Hash: 0x1CA3DA81
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_get_next_thread(
     process_handle: HANDLE,
     thread_handle: HANDLE,
@@ -23617,7 +23415,6 @@ pub unsafe fn nt_get_next_thread(
 /// Hash: 0x2A2C6F9A
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_get_nls_section_ptr(
     section_type: ULONG,
     section_data: ULONG,
@@ -23735,7 +23532,6 @@ pub unsafe fn nt_get_nls_section_ptr(
 /// Hash: 0x15A70A0A
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_get_notification_resource_manager(
     resource_manager_handle: HANDLE,
     transaction_notification: PVOID,
@@ -23863,7 +23659,6 @@ pub unsafe fn nt_get_notification_resource_manager(
 /// Hash: 0xCECD2D9A
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_get_plug_play_event(
     event_handle: HANDLE,
     context: PVOID,
@@ -23976,7 +23771,6 @@ pub unsafe fn nt_get_plug_play_event(
 /// Hash: 0x6C02E016
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_get_write_watch(
     process_handle: HANDLE,
     flags: ULONG,
@@ -24104,7 +23898,6 @@ pub unsafe fn nt_get_write_watch(
 /// Hash: 0x3B996B24
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_impersonate_anonymous_token(thread_handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -24195,7 +23988,6 @@ pub unsafe fn nt_impersonate_anonymous_token(thread_handle: HANDLE) -> NTSTATUS 
 /// Hash: 0x54F95574
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_impersonate_client_of_port(
     port_handle: HANDLE,
     message: PPORT_MESSAGE,
@@ -24296,7 +24088,6 @@ pub unsafe fn nt_impersonate_client_of_port(
 /// Hash: 0x2C8D3E3B
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_impersonate_thread(
     server_thread_handle: HANDLE,
     client_thread_handle: HANDLE,
@@ -24403,7 +24194,6 @@ pub unsafe fn nt_impersonate_thread(
 /// Hash: 0x9A34686C
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_initialize_enclave(
     process_handle: HANDLE,
     base_address: PVOID,
@@ -24521,7 +24311,6 @@ pub unsafe fn nt_initialize_enclave(
 /// Hash: 0x11573809
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_initialize_nls_files(
     base_address: PVOID,
     default_locale_id: *mut LCID,
@@ -24628,7 +24417,6 @@ pub unsafe fn nt_initialize_nls_files(
 /// Hash: 0x4CDD465D
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_initialize_registry(boot_condition: USHORT) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -24719,7 +24507,6 @@ pub unsafe fn nt_initialize_registry(boot_condition: USHORT) -> NTSTATUS {
 /// Hash: 0x3E91C2F3
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_initiate_power_action(
     system_action: u32,
     lightest_system_state: u32,
@@ -24832,7 +24619,6 @@ pub unsafe fn nt_initiate_power_action(
 /// Hash: 0x5B9EACF7
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_is_process_in_job(
     process_handle: HANDLE,
     job_handle: HANDLE,
@@ -24930,7 +24716,6 @@ pub unsafe fn nt_is_process_in_job(process_handle: HANDLE, job_handle: HANDLE) -
 /// Hash: 0x3162FECE
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_is_system_resume_automatic() -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -25016,7 +24801,6 @@ pub unsafe fn nt_is_system_resume_automatic() -> NTSTATUS {
 /// Hash: 0x559F1FB1
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_is_ui_language_comitted() -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -25102,7 +24886,6 @@ pub unsafe fn nt_is_ui_language_comitted() -> NTSTATUS {
 /// Hash: 0x076A0DED
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_list_transactions() -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -25188,7 +24971,6 @@ pub unsafe fn nt_list_transactions() -> NTSTATUS {
 /// Hash: 0x22B1011E
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_listen_port(
     port_handle: HANDLE,
     connection_request: PPORT_MESSAGE,
@@ -25286,7 +25068,6 @@ pub unsafe fn nt_listen_port(port_handle: HANDLE, connection_request: PPORT_MESS
 /// Hash: 0x76911E68
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_load_driver(driver_service_name: PUNICODE_STRING) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -25377,7 +25158,6 @@ pub unsafe fn nt_load_driver(driver_service_name: PUNICODE_STRING) -> NTSTATUS {
 /// Hash: 0xBC23A29C
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_load_enclave_data(
     process_handle: HANDLE,
     base_address: PVOID,
@@ -25515,7 +25295,6 @@ pub unsafe fn nt_load_enclave_data(
 /// Hash: 0xECDE21EA
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_load_hot_patch(
     hot_patch_name: PUNICODE_STRING,
     load_flag: ULONG,
@@ -25613,7 +25392,6 @@ pub unsafe fn nt_load_hot_patch(hot_patch_name: PUNICODE_STRING, load_flag: ULON
 /// Hash: 0x4BEC6834
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_load_key(
     target_key: POBJECT_ATTRIBUTES,
     source_file: POBJECT_ATTRIBUTES,
@@ -25714,7 +25492,6 @@ pub unsafe fn nt_load_key(
 /// Hash: 0x7FA7F678
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_load_key2(
     target_key: POBJECT_ATTRIBUTES,
     source_file: POBJECT_ATTRIBUTES,
@@ -25821,7 +25598,6 @@ pub unsafe fn nt_load_key2(
 /// Hash: 0x7FA7F164
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_load_key3(
     target_key: POBJECT_ATTRIBUTES,
     source_file: POBJECT_ATTRIBUTES,
@@ -25949,7 +25725,6 @@ pub unsafe fn nt_load_key3(
 /// Hash: 0x3FDFEB83
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_load_key_ex(
     target_key: POBJECT_ATTRIBUTES,
     source_file: POBJECT_ATTRIBUTES,
@@ -26082,7 +25857,6 @@ pub unsafe fn nt_load_key_ex(
 /// Hash: 0x36B75638
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_lock_file(
     file_handle: HANDLE,
     event: HANDLE,
@@ -26225,7 +25999,6 @@ pub unsafe fn nt_lock_file(
 /// Hash: 0xC131C6A6
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_lock_product_activation_keys(
     p_private_ver: *mut ULONG,
     p_safe_mode: *mut ULONG,
@@ -26326,7 +26099,6 @@ pub unsafe fn nt_lock_product_activation_keys(
 /// Hash: 0x9F84FA78
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_lock_registry_key(key_handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -26417,7 +26189,6 @@ pub unsafe fn nt_lock_registry_key(key_handle: HANDLE) -> NTSTATUS {
 /// Hash: 0x1B91EE9D
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_lock_virtual_memory(
     process_handle: HANDLE,
     base_address: PVOID,
@@ -26530,7 +26301,6 @@ pub unsafe fn nt_lock_virtual_memory(
 /// Hash: 0x90ABA81F
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_make_permanent_object(handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -26621,7 +26391,6 @@ pub unsafe fn nt_make_permanent_object(handle: HANDLE) -> NTSTATUS {
 /// Hash: 0x3896466B
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_make_temporary_object(handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -26712,7 +26481,6 @@ pub unsafe fn nt_make_temporary_object(handle: HANDLE) -> NTSTATUS {
 /// Hash: 0x40ED487E
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_manage_hot_patch(
     unknown_parameter1: ULONG,
     unknown_parameter2: ULONG,
@@ -26825,7 +26593,6 @@ pub unsafe fn nt_manage_hot_patch(
 /// Hash: 0x3E491EDB
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_manage_partition(
     target_handle: HANDLE,
     source_handle: HANDLE,
@@ -26943,7 +26710,6 @@ pub unsafe fn nt_manage_partition(
 /// Hash: 0x11481BD6
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_manage_wob_ticket(
     operation: ULONG,
     input_buffer: PVOID,
@@ -27061,7 +26827,6 @@ pub unsafe fn nt_manage_wob_ticket(
 /// Hash: 0x008F163C
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_map_cmf_module(
     what: ULONG,
     index: ULONG,
@@ -27184,7 +26949,6 @@ pub unsafe fn nt_map_cmf_module(
 /// Hash: 0x01B34E0C
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_map_user_physical_pages(
     virtual_address: PVOID,
     number_of_pages: *mut ULONG,
@@ -27291,7 +27055,6 @@ pub unsafe fn nt_map_user_physical_pages(
 /// Hash: 0x33892109
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_map_user_physical_pages_scatter(
     virtual_addresses: PVOID,
     number_of_pages: *mut ULONG,
@@ -27398,7 +27161,6 @@ pub unsafe fn nt_map_user_physical_pages_scatter(
 /// Hash: 0x6009669D
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_map_view_of_section(
     section_handle: HANDLE,
     process_handle: HANDLE,
@@ -27541,7 +27303,6 @@ pub unsafe fn nt_map_view_of_section(
 /// Hash: 0x7E943250
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_map_view_of_section_ex(
     section_handle: HANDLE,
     process_handle: HANDLE,
@@ -27679,7 +27440,6 @@ pub unsafe fn nt_map_view_of_section_ex(
 /// Hash: 0xE10EE198
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_marshall_transaction() -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -27765,7 +27525,6 @@ pub unsafe fn nt_marshall_transaction() -> NTSTATUS {
 /// Hash: 0x09940712
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_modify_boot_entry(boot_entry: PVOID) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -27856,7 +27615,6 @@ pub unsafe fn nt_modify_boot_entry(boot_entry: PVOID) -> NTSTATUS {
 /// Hash: 0xCD52DBDC
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_modify_driver_entry(driver_entry: PVOID) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -27947,7 +27705,6 @@ pub unsafe fn nt_modify_driver_entry(driver_entry: PVOID) -> NTSTATUS {
 /// Hash: 0x36D8058E
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_notify_change_directory_file(
     file_handle: HANDLE,
     event: HANDLE,
@@ -28085,7 +27842,6 @@ pub unsafe fn nt_notify_change_directory_file(
 /// Hash: 0x9557E1AB
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_notify_change_directory_file_ex(
     file_handle: HANDLE,
     event: HANDLE,
@@ -28228,7 +27984,6 @@ pub unsafe fn nt_notify_change_directory_file_ex(
 /// Hash: 0x984DEFB2
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_notify_change_key(
     key_handle: HANDLE,
     event: HANDLE,
@@ -28371,7 +28126,6 @@ pub unsafe fn nt_notify_change_key(
 /// Hash: 0x4BD2BCB8
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_notify_change_multiple_keys(
     master_key_handle: HANDLE,
     count: ULONG,
@@ -28524,7 +28278,6 @@ pub unsafe fn nt_notify_change_multiple_keys(
 /// Hash: 0x0DC70D28
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_notify_change_session(
     session_handle: HANDLE,
     change_sequence_number: ULONG,
@@ -28657,7 +28410,6 @@ pub unsafe fn nt_notify_change_session(
 /// Hash: 0x4688461B
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_cpu_partition(
     partition_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -28764,7 +28516,6 @@ pub unsafe fn nt_open_cpu_partition(
 /// Hash: 0xEA50E4DD
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_directory_object(
     directory_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -28871,7 +28622,6 @@ pub unsafe fn nt_open_directory_object(
 /// Hash: 0xF9A73DEC
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_enlistment(
     enlistment_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -28989,7 +28739,6 @@ pub unsafe fn nt_open_enlistment(
 /// Hash: 0x28B2313E
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_event(
     event_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -29096,7 +28845,6 @@ pub unsafe fn nt_open_event(
 /// Hash: 0x46D09D79
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_event_pair(
     event_pair_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -29203,7 +28951,6 @@ pub unsafe fn nt_open_event_pair(
 /// Hash: 0xE65CD2CE
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_file(
     file_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -29326,7 +29073,6 @@ pub unsafe fn nt_open_file(
 /// Hash: 0x028C021F
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_io_completion(
     io_completion_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -29433,7 +29179,6 @@ pub unsafe fn nt_open_io_completion(
 /// Hash: 0x0E213882
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_job_object(
     job_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -29540,7 +29285,6 @@ pub unsafe fn nt_open_job_object(
 /// Hash: 0x763667AF
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_key(
     key_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -29647,7 +29391,6 @@ pub unsafe fn nt_open_key(
 /// Hash: 0x979872E5
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_key_ex(
     key_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -29760,7 +29503,6 @@ pub unsafe fn nt_open_key_ex(
 /// Hash: 0x62BD3B80
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_key_transacted(
     key_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -29873,7 +29615,6 @@ pub unsafe fn nt_open_key_transacted(
 /// Hash: 0xC73C8BE8
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_key_transacted_ex(
     key_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -29991,7 +29732,6 @@ pub unsafe fn nt_open_key_transacted_ex(
 /// Hash: 0x30ABF3FC
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_keyed_event(
     keyed_event_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -30098,7 +29838,6 @@ pub unsafe fn nt_open_keyed_event(
 /// Hash: 0x173BFF5E
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_mutant(
     mutant_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -30205,7 +29944,6 @@ pub unsafe fn nt_open_mutant(
 /// Hash: 0x9C2F84A2
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_object_audit_alarm(
     subsystem_name: PUNICODE_STRING,
     handle_id: PVOID,
@@ -30358,7 +30096,6 @@ pub unsafe fn nt_open_object_audit_alarm(
 /// Hash: 0x7C1C7487
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_partition(
     partition_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -30465,7 +30202,6 @@ pub unsafe fn nt_open_partition(
 /// Hash: 0xFF50EDE9
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_private_namespace(
     namespace_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -30578,7 +30314,6 @@ pub unsafe fn nt_open_private_namespace(
 /// Hash: 0x0FAC0030
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_process(
     process_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -30691,7 +30426,6 @@ pub unsafe fn nt_open_process(
 /// Hash: 0x6F815D02
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_process_token(
     process_handle: HANDLE,
     desired_access: ACCESS_MASK,
@@ -30798,7 +30532,6 @@ pub unsafe fn nt_open_process_token(
 /// Hash: 0xBA828737
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_process_token_ex(
     process_handle: HANDLE,
     desired_access: ACCESS_MASK,
@@ -30911,7 +30644,6 @@ pub unsafe fn nt_open_process_token_ex(
 /// Hash: 0x150FD55C
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_registry_transaction(
     registry_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -31018,7 +30750,6 @@ pub unsafe fn nt_open_registry_transaction(
 /// Hash: 0xA392AD0A
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_resource_manager(
     resource_manager_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -31136,7 +30867,6 @@ pub unsafe fn nt_open_resource_manager(
 /// Hash: 0xCAE125FC
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_section(
     section_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -31243,7 +30973,6 @@ pub unsafe fn nt_open_section(
 /// Hash: 0x30ABE896
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_semaphore(
     semaphore_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -31350,7 +31079,6 @@ pub unsafe fn nt_open_semaphore(
 /// Hash: 0x49824510
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_session(
     session_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -31457,7 +31185,6 @@ pub unsafe fn nt_open_session(
 /// Hash: 0x1FB4697E
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_silo_object(
     silo_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -31564,7 +31291,6 @@ pub unsafe fn nt_open_silo_object(
 /// Hash: 0xB62A9CB7
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_symbolic_link_object(
     link_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -31671,7 +31397,6 @@ pub unsafe fn nt_open_symbolic_link_object(
 /// Hash: 0x150D9925
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_thread(
     thread_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -31784,7 +31509,6 @@ pub unsafe fn nt_open_thread(
 /// Hash: 0x3198013A
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_thread_token(
     thread_handle: HANDLE,
     desired_access: ACCESS_MASK,
@@ -31897,7 +31621,6 @@ pub unsafe fn nt_open_thread_token(
 /// Hash: 0xBEA1F067
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_thread_token_ex(
     thread_handle: HANDLE,
     desired_access: ACCESS_MASK,
@@ -32015,7 +31738,6 @@ pub unsafe fn nt_open_thread_token_ex(
 /// Hash: 0xC053C0CD
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_timer(
     timer_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -32122,7 +31844,6 @@ pub unsafe fn nt_open_timer(
 /// Hash: 0xD68AF41F
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_transaction(
     transaction_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -32240,7 +31961,6 @@ pub unsafe fn nt_open_transaction(
 /// Hash: 0xBDE063AC
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_open_transaction_manager(
     tm_handle: *mut HANDLE,
     desired_access: ACCESS_MASK,
@@ -32363,7 +32083,6 @@ pub unsafe fn nt_open_transaction_manager(
 /// Hash: 0x538C4F07
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_plug_play_control(
     pn_p_control_class: u32,
     pn_p_control_data: PVOID,
@@ -32470,7 +32189,6 @@ pub unsafe fn nt_plug_play_control(
 /// Hash: 0xE74DE7DE
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_power_information(
     information_level: u32,
     input_buffer: PVOID,
@@ -32588,7 +32306,6 @@ pub unsafe fn nt_power_information(
 /// Hash: 0x2A57CC1C
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_pre_prepare_complete(
     enlistment_handle: HANDLE,
     tm_virtual_clock: *mut LARGE_INTEGER,
@@ -32689,7 +32406,6 @@ pub unsafe fn nt_pre_prepare_complete(
 /// Hash: 0x19413CD3
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_pre_prepare_enlistment(
     enlistment_handle: HANDLE,
     tm_virtual_clock: *mut LARGE_INTEGER,
@@ -32790,7 +32506,6 @@ pub unsafe fn nt_pre_prepare_enlistment(
 /// Hash: 0x08B7E2F8
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_prepare_complete(
     enlistment_handle: HANDLE,
     tm_virtual_clock: *mut LARGE_INTEGER,
@@ -32891,7 +32606,6 @@ pub unsafe fn nt_prepare_complete(
 /// Hash: 0xD450E9FA
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_prepare_enlistment(
     enlistment_handle: HANDLE,
     tm_virtual_clock: *mut LARGE_INTEGER,
@@ -32992,7 +32706,6 @@ pub unsafe fn nt_prepare_enlistment(
 /// Hash: 0xA5077E4B
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_privilege_check(
     client_token: HANDLE,
     required_privileges: PPRIVILEGE_SET,
@@ -33099,7 +32812,6 @@ pub unsafe fn nt_privilege_check(
 /// Hash: 0x11141D8B
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_privilege_object_audit_alarm(
     subsystem_name: PUNICODE_STRING,
     handle_id: PVOID,
@@ -33222,7 +32934,6 @@ pub unsafe fn nt_privilege_object_audit_alarm(
 /// Hash: 0xBA9BB703
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_privileged_service_audit_alarm(
     subsystem_name: PUNICODE_STRING,
     service_name: PUNICODE_STRING,
@@ -33340,7 +33051,6 @@ pub unsafe fn nt_privileged_service_audit_alarm(
 /// Hash: 0x069E4E54
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_propagation_complete(
     resource_manager_handle: HANDLE,
     request_cookie: ULONG,
@@ -33453,7 +33163,6 @@ pub unsafe fn nt_propagation_complete(
 /// Hash: 0x2096B3A9
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_propagation_failed(
     resource_manager_handle: HANDLE,
     request_cookie: ULONG,
@@ -33560,7 +33269,6 @@ pub unsafe fn nt_propagation_failed(
 /// Hash: 0x039F2B0F
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_protect_virtual_memory(
     process_handle: HANDLE,
     base_address: *mut PVOID,
@@ -33678,7 +33386,6 @@ pub unsafe fn nt_protect_virtual_memory(
 /// Hash: 0x50CD7808
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_pss_capture_va_space_bulk(
     process_handle: HANDLE,
     base_address: PVOID,
@@ -33796,7 +33503,6 @@ pub unsafe fn nt_pss_capture_va_space_bulk(
 /// Hash: 0xD649D6DB
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_pull_transaction() -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -33882,7 +33588,6 @@ pub unsafe fn nt_pull_transaction() -> NTSTATUS {
 /// Hash: 0x26012393
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_pulse_event(
     event_handle: HANDLE,
     previous_state: *mut ULONG,
@@ -33980,7 +33685,6 @@ pub unsafe fn nt_pulse_event(event_handle: HANDLE, previous_state: *mut ULONG) -
 /// Hash: 0x7A394EE6
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_attributes_file(
     object_attributes: POBJECT_ATTRIBUTES,
     file_information: PFILE_BASIC_INFORMATION,
@@ -34081,7 +33785,6 @@ pub unsafe fn nt_query_attributes_file(
 /// Hash: 0x0ADF316C
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_auxiliary_counter_frequency(
     lp_auxiliary_counter_frequency: *mut u64,
 ) -> NTSTATUS {
@@ -34176,7 +33879,6 @@ pub unsafe fn nt_query_auxiliary_counter_frequency(
 /// Hash: 0x2F13F739
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_boot_entry_order(ids: *mut ULONG, count: *mut ULONG) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -34271,7 +33973,6 @@ pub unsafe fn nt_query_boot_entry_order(ids: *mut ULONG, count: *mut ULONG) -> N
 /// Hash: 0xF49FE53D
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_boot_options(
     boot_options: PBOOT_OPTIONS,
     boot_options_length: *mut ULONG,
@@ -34372,7 +34073,6 @@ pub unsafe fn nt_query_boot_options(
 /// Hash: 0xB23C6A02
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_debug_filter_state(
     component_id: ULONG,
     level: ULONG,
@@ -34470,7 +34170,6 @@ pub unsafe fn nt_query_debug_filter_state(component_id: ULONG, level: ULONG) -> 
 /// Hash: 0x86258EB3
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_default_locale(
     user_profile: BOOLEAN,
     default_locale_id: *mut LCID,
@@ -34571,7 +34270,6 @@ pub unsafe fn nt_query_default_locale(
 /// Hash: 0x0D8F5E32
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_default_ui_language(
     default_ui_language_id: *mut LANGID,
 ) -> NTSTATUS {
@@ -34664,7 +34362,6 @@ pub unsafe fn nt_query_default_ui_language(default_ui_language_id: *mut LANGID) 
 /// Hash: 0x23E575D6
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_directory_file(
     file_handle: HANDLE,
     event: HANDLE,
@@ -34812,7 +34509,6 @@ pub unsafe fn nt_query_directory_file(
 /// Hash: 0x2034228D
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_directory_file_ex(
     file_handle: HANDLE,
     event: HANDLE,
@@ -34955,7 +34651,6 @@ pub unsafe fn nt_query_directory_file_ex(
 /// Hash: 0x90BF79C2
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_directory_object(
     directory_handle: HANDLE,
     buffer: PVOID,
@@ -35083,7 +34778,6 @@ pub unsafe fn nt_query_directory_object(
 /// Hash: 0xCFCDDD41
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_driver_entry_order(
     ids: *mut ULONG,
     count: *mut ULONG,
@@ -35181,7 +34875,6 @@ pub unsafe fn nt_query_driver_entry_order(ids: *mut ULONG, count: *mut ULONG) ->
 /// Hash: 0x2801B43A
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_ea_file(
     file_handle: HANDLE,
     io_status_block: PIO_STATUS_BLOCK,
@@ -35319,7 +35012,6 @@ pub unsafe fn nt_query_ea_file(
 /// Hash: 0x89040505
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_event(
     event_handle: HANDLE,
     event_information_class: u32,
@@ -35437,7 +35129,6 @@ pub unsafe fn nt_query_event(
 /// Hash: 0x6DB94169
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_full_attributes_file(
     object_attributes: POBJECT_ATTRIBUTES,
     file_information: PFILE_NETWORK_OPEN_INFORMATION,
@@ -35538,7 +35229,6 @@ pub unsafe fn nt_query_full_attributes_file(
 /// Hash: 0x6AF1689C
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_information_atom(
     atom: USHORT,
     atom_information_class: u32,
@@ -35656,7 +35346,6 @@ pub unsafe fn nt_query_information_atom(
 /// Hash: 0x4F0A548B
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_information_by_name(
     object_attributes: POBJECT_ATTRIBUTES,
     io_status_block: PIO_STATUS_BLOCK,
@@ -35774,7 +35463,6 @@ pub unsafe fn nt_query_information_by_name(
 /// Hash: 0x014B01D9
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_information_cpu_partition(
     partition_handle: HANDLE,
     partition_information_class: ULONG,
@@ -35892,7 +35580,6 @@ pub unsafe fn nt_query_information_cpu_partition(
 /// Hash: 0xD946FEDD
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_information_enlistment(
     enlistment_handle: HANDLE,
     enlistment_information_class: u32,
@@ -36010,7 +35697,6 @@ pub unsafe fn nt_query_information_enlistment(
 /// Hash: 0x76E241B0
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_information_file(
     file_handle: HANDLE,
     io_status_block: PIO_STATUS_BLOCK,
@@ -36128,7 +35814,6 @@ pub unsafe fn nt_query_information_file(
 /// Hash: 0x72DF4C75
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_information_job_object(
     job_handle: HANDLE,
     job_object_information_class: u32,
@@ -36246,7 +35931,6 @@ pub unsafe fn nt_query_information_job_object(
 /// Hash: 0x7AA06372
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_information_port(
     port_handle: HANDLE,
     port_information_class: u32,
@@ -36364,7 +36048,6 @@ pub unsafe fn nt_query_information_port(
 /// Hash: 0xE2A1F32F
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_information_process(
     process_handle: HANDLE,
     process_information_class: u32,
@@ -36482,7 +36165,6 @@ pub unsafe fn nt_query_information_process(
 /// Hash: 0x8B3C9D9C
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_information_resource_manager(
     resource_manager_handle: HANDLE,
     resource_manager_information_class: u32,
@@ -36600,7 +36282,6 @@ pub unsafe fn nt_query_information_resource_manager(
 /// Hash: 0x2AB6544B
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_information_silo_object(
     silo_handle: HANDLE,
     silo_information_class: ULONG,
@@ -36718,7 +36399,6 @@ pub unsafe fn nt_query_information_silo_object(
 /// Hash: 0x069603F7
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_information_thread(
     thread_handle: HANDLE,
     thread_information_class: u32,
@@ -36836,7 +36516,6 @@ pub unsafe fn nt_query_information_thread(
 /// Hash: 0xE3B93D15
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_information_token(
     token_handle: HANDLE,
     token_information_class: u32,
@@ -36954,7 +36633,6 @@ pub unsafe fn nt_query_information_token(
 /// Hash: 0x448C2B91
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_information_transaction(
     transaction_handle: HANDLE,
     transaction_information_class: u32,
@@ -37072,7 +36750,6 @@ pub unsafe fn nt_query_information_transaction(
 /// Hash: 0x9752E192
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_information_transaction_manager(
     transaction_manager_handle: HANDLE,
     transaction_manager_information_class: u32,
@@ -37190,7 +36867,6 @@ pub unsafe fn nt_query_information_transaction_manager(
 /// Hash: 0x04923A2A
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_information_worker_factory(
     worker_factory_handle: HANDLE,
     worker_factory_information_class: u32,
@@ -37308,7 +36984,6 @@ pub unsafe fn nt_query_information_worker_factory(
 /// Hash: 0x24BAD02B
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_install_ui_language(
     install_ui_language_id: *mut LANGID,
 ) -> NTSTATUS {
@@ -37401,7 +37076,6 @@ pub unsafe fn nt_query_install_ui_language(install_ui_language_id: *mut LANGID) 
 /// Hash: 0x349A4C58
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_interval_profile(
     profile_source: u32,
     interval: *mut ULONG,
@@ -37499,7 +37173,6 @@ pub unsafe fn nt_query_interval_profile(profile_source: u32, interval: *mut ULON
 /// Hash: 0x54CE545D
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_io_completion(
     io_completion_handle: HANDLE,
     io_completion_information_class: u32,
@@ -37617,7 +37290,6 @@ pub unsafe fn nt_query_io_completion(
 /// Hash: 0x368E4573
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_io_ring_capabilities(
     capabilities: PVOID,
     capabilities_length: SIZE_T,
@@ -37718,7 +37390,6 @@ pub unsafe fn nt_query_io_ring_capabilities(
 /// Hash: 0x2FD53276
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_key(
     key_handle: HANDLE,
     key_information_class: u32,
@@ -37836,7 +37507,6 @@ pub unsafe fn nt_query_key(
 /// Hash: 0xCA9EDA15
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_license_value(
     value_name: PUNICODE_STRING,
     type_: *mut ULONG,
@@ -37954,7 +37624,6 @@ pub unsafe fn nt_query_license_value(
 /// Hash: 0x9F4A7428
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_multiple_value_key(
     key_handle: HANDLE,
     value_entries: PKEY_VALUE_ENTRY,
@@ -38077,7 +37746,6 @@ pub unsafe fn nt_query_multiple_value_key(
 /// Hash: 0xD253DBC6
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_mutant(
     mutant_handle: HANDLE,
     mutant_information_class: u32,
@@ -38195,7 +37863,6 @@ pub unsafe fn nt_query_mutant(
 /// Hash: 0x8C35A4A9
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_object(
     handle: HANDLE,
     object_information_class: u32,
@@ -38313,7 +37980,6 @@ pub unsafe fn nt_query_object(
 /// Hash: 0x2A903911
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_open_sub_keys(
     target_key: POBJECT_ATTRIBUTES,
     handle_count: *mut ULONG,
@@ -38414,7 +38080,6 @@ pub unsafe fn nt_query_open_sub_keys(
 /// Hash: 0xE980CD3C
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_open_sub_keys_ex(
     target_key: POBJECT_ATTRIBUTES,
     buffer_length: ULONG,
@@ -38527,7 +38192,6 @@ pub unsafe fn nt_query_open_sub_keys_ex(
 /// Hash: 0x3BADC5C1
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_performance_counter(
     performance_counter: *mut LARGE_INTEGER,
     performance_frequency: *mut LARGE_INTEGER,
@@ -38628,7 +38292,6 @@ pub unsafe fn nt_query_performance_counter(
 /// Hash: 0x01BF1A30
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_port_information_process() -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -38714,7 +38377,6 @@ pub unsafe fn nt_query_port_information_process() -> NTSTATUS {
 /// Hash: 0xAB3D81AB
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_quota_information_file(
     file_handle: HANDLE,
     io_status_block: PIO_STATUS_BLOCK,
@@ -38852,7 +38514,6 @@ pub unsafe fn nt_query_quota_information_file(
 /// Hash: 0x0A8C0411
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_section(
     section_handle: HANDLE,
     section_information_class: u32,
@@ -38970,7 +38631,6 @@ pub unsafe fn nt_query_section(
 /// Hash: 0xF567E5CE
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_security_attributes_token(
     token_handle: HANDLE,
     attributes: PUNICODE_STRING,
@@ -39093,7 +38753,6 @@ pub unsafe fn nt_query_security_attributes_token(
 /// Hash: 0x1222FF52
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_security_object(
     handle: HANDLE,
     security_information: PVOID,
@@ -39211,7 +38870,6 @@ pub unsafe fn nt_query_security_object(
 /// Hash: 0xE45FD9EB
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_security_policy(
     unknown_parameter1: ULONG_PTR,
     unknown_parameter2: ULONG_PTR,
@@ -39334,7 +38992,6 @@ pub unsafe fn nt_query_security_policy(
 /// Hash: 0x8C59F080
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_semaphore(
     semaphore_handle: HANDLE,
     semaphore_information_class: u32,
@@ -39452,7 +39109,6 @@ pub unsafe fn nt_query_semaphore(
 /// Hash: 0x8A36A49B
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_symbolic_link_object(
     link_handle: HANDLE,
     link_target: PUNICODE_STRING,
@@ -39559,7 +39215,6 @@ pub unsafe fn nt_query_symbolic_link_object(
 /// Hash: 0xE7219CF1
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_system_environment_value(
     variable_name: PUNICODE_STRING,
     variable_value: PVOID,
@@ -39672,7 +39327,6 @@ pub unsafe fn nt_query_system_environment_value(
 /// Hash: 0x8BD177AA
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_system_environment_value_ex(
     variable_name: PUNICODE_STRING,
     vendor_guid: PVOID,
@@ -39790,7 +39444,6 @@ pub unsafe fn nt_query_system_environment_value_ex(
 /// Hash: 0x5ECC7D99
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_system_information(
     system_information_class: u32,
     system_information: PVOID,
@@ -39903,7 +39556,6 @@ pub unsafe fn nt_query_system_information(
 /// Hash: 0xA3556E11
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_system_information_ex(
     system_information_class: u32,
     input_buffer: PVOID,
@@ -40026,7 +39678,6 @@ pub unsafe fn nt_query_system_information_ex(
 /// Hash: 0x0CAB757F
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_system_time(system_time: *mut LARGE_INTEGER) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -40117,7 +39768,6 @@ pub unsafe fn nt_query_system_time(system_time: *mut LARGE_INTEGER) -> NTSTATUS 
 /// Hash: 0xBB8EE122
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_timer(
     timer_handle: HANDLE,
     timer_information_class: u32,
@@ -40235,7 +39885,6 @@ pub unsafe fn nt_query_timer(
 /// Hash: 0x34ABF405
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_timer_resolution(
     maximum_time: *mut ULONG,
     minimum_time: *mut ULONG,
@@ -40342,7 +39991,6 @@ pub unsafe fn nt_query_timer_resolution(
 /// Hash: 0x1C58D904
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_value_key(
     key_handle: HANDLE,
     value_name: PUNICODE_STRING,
@@ -40465,7 +40113,6 @@ pub unsafe fn nt_query_value_key(
 /// Hash: 0x0D961D39
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_virtual_memory(
     process_handle: HANDLE,
     base_address: PVOID,
@@ -40588,7 +40235,6 @@ pub unsafe fn nt_query_virtual_memory(
 /// Hash: 0xFCBBF6DC
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_volume_information_file(
     file_handle: HANDLE,
     io_status_block: PIO_STATUS_BLOCK,
@@ -40706,7 +40352,6 @@ pub unsafe fn nt_query_volume_information_file(
 /// Hash: 0xBEBD4BA0
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_wnf_state_data(
     state_name: PCWNF_STATE_NAME,
     type_id: PCWNF_TYPE_ID,
@@ -40829,7 +40474,6 @@ pub unsafe fn nt_query_wnf_state_data(
 /// Hash: 0x1DB31B20
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_query_wnf_state_name_information(
     state_name: PCWNF_STATE_NAME,
     name_info_class: PCWNF_TYPE_ID,
@@ -40947,7 +40591,6 @@ pub unsafe fn nt_query_wnf_state_name_information(
 /// Hash: 0xB28D6F34
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_queue_apc_thread(
     thread_handle: HANDLE,
     apc_routine: PKNORMAL_ROUTINE,
@@ -41065,7 +40708,6 @@ pub unsafe fn nt_queue_apc_thread(
 /// Hash: 0x45B888EC
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_queue_apc_thread_ex(
     thread_handle: HANDLE,
     user_apc_reserve_handle: HANDLE,
@@ -41188,7 +40830,6 @@ pub unsafe fn nt_queue_apc_thread_ex(
 /// Hash: 0xA9FD7E14
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_queue_apc_thread_ex2(
     thread_handle: HANDLE,
     reserve_handle: HANDLE,
@@ -41316,7 +40957,6 @@ pub unsafe fn nt_queue_apc_thread_ex2(
 /// Hash: 0x9ECA6349
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_raise_exception(
     exception_record: PEXCEPTION_RECORD,
     context_record: PCONTEXT,
@@ -41423,7 +41063,6 @@ pub unsafe fn nt_raise_exception(
 /// Hash: 0x0B973B35
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_raise_hard_error(
     error_status: NTSTATUS,
     number_of_parameters: ULONG,
@@ -41546,7 +41185,6 @@ pub unsafe fn nt_raise_hard_error(
 /// Hash: 0x0FB1DE07
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_read_file(
     file_handle: HANDLE,
     event: HANDLE,
@@ -41684,7 +41322,6 @@ pub unsafe fn nt_read_file(
 /// Hash: 0x318C2B01
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_read_file_scatter(
     file_handle: HANDLE,
     event: HANDLE,
@@ -41822,7 +41459,6 @@ pub unsafe fn nt_read_file_scatter(
 /// Hash: 0x7DC31C55
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_read_only_enlistment(
     enlistment_handle: HANDLE,
     tm_virtual_clock: *mut LARGE_INTEGER,
@@ -41923,7 +41559,6 @@ pub unsafe fn nt_read_only_enlistment(
 /// Hash: 0xFC401FC2
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_read_request_data(
     port_handle: HANDLE,
     message: PPORT_MESSAGE,
@@ -42046,7 +41681,6 @@ pub unsafe fn nt_read_request_data(
 /// Hash: 0x07951B01
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_read_virtual_memory(
     process_handle: HANDLE,
     base_address: PVOID,
@@ -42164,7 +41798,6 @@ pub unsafe fn nt_read_virtual_memory(
 /// Hash: 0x1294502F
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_read_virtual_memory_ex(
     process_handle: HANDLE,
     base_address: PVOID,
@@ -42287,7 +41920,6 @@ pub unsafe fn nt_read_virtual_memory_ex(
 /// Hash: 0xF9651EFE
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_recover_enlistment(
     enlistment_handle: HANDLE,
     enlistment_key: PVOID,
@@ -42385,7 +42017,6 @@ pub unsafe fn nt_recover_enlistment(enlistment_handle: HANDLE, enlistment_key: P
 /// Hash: 0x190B33C8
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_recover_resource_manager(resource_manager_handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -42476,7 +42107,6 @@ pub unsafe fn nt_recover_resource_manager(resource_manager_handle: HANDLE) -> NT
 /// Hash: 0x8B349598
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_recover_transaction_manager(
     transaction_manager_handle: HANDLE,
 ) -> NTSTATUS {
@@ -42569,7 +42199,6 @@ pub unsafe fn nt_recover_transaction_manager(transaction_manager_handle: HANDLE)
 /// Hash: 0x0E905233
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_register_protocol_address_information(
     resource_manager: HANDLE,
     protocol_id: PVOID,
@@ -42687,7 +42316,6 @@ pub unsafe fn nt_register_protocol_address_information(
 /// Hash: 0x6AFF8766
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_register_thread_terminate_port(port_handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -42778,7 +42406,6 @@ pub unsafe fn nt_register_thread_terminate_port(port_handle: HANDLE) -> NTSTATUS
 /// Hash: 0x6E5475FF
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_release_cmf_view_ownership() -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -42864,7 +42491,6 @@ pub unsafe fn nt_release_cmf_view_ownership() -> NTSTATUS {
 /// Hash: 0xE8A90ADF
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_release_keyed_event(
     keyed_event_handle: HANDLE,
     key_value: PVOID,
@@ -42977,7 +42603,6 @@ pub unsafe fn nt_release_keyed_event(
 /// Hash: 0x06983D2E
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_release_mutant(
     mutant_handle: HANDLE,
     previous_count: *mut ULONG,
@@ -43075,7 +42700,6 @@ pub unsafe fn nt_release_mutant(mutant_handle: HANDLE, previous_count: *mut ULON
 /// Hash: 0x3CA80630
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_release_semaphore(
     semaphore_handle: HANDLE,
     release_count: LONG,
@@ -43182,7 +42806,6 @@ pub unsafe fn nt_release_semaphore(
 /// Hash: 0x0AA07267
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_release_worker_factory_worker(
     worker_factory_handle: HANDLE,
 ) -> NTSTATUS {
@@ -43275,7 +42898,6 @@ pub unsafe fn nt_release_worker_factory_worker(worker_factory_handle: HANDLE) ->
 /// Hash: 0x4C864C15
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_remove_io_completion(
     io_completion_handle: HANDLE,
     key_context: *mut ULONG,
@@ -43393,7 +43015,6 @@ pub unsafe fn nt_remove_io_completion(
 /// Hash: 0x00933228
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_remove_io_completion_ex(
     io_completion_handle: HANDLE,
     io_completion_information: PFILE_IO_COMPLETION_INFORMATION,
@@ -43516,7 +43137,6 @@ pub unsafe fn nt_remove_io_completion_ex(
 /// Hash: 0x48B1BEFE
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_remove_process_debug(
     process_handle: HANDLE,
     debug_object_handle: HANDLE,
@@ -43617,7 +43237,6 @@ pub unsafe fn nt_remove_process_debug(
 /// Hash: 0xCBAED032
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_rename_key(key_handle: HANDLE, new_name: PUNICODE_STRING) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -43712,7 +43331,6 @@ pub unsafe fn nt_rename_key(key_handle: HANDLE, new_name: PUNICODE_STRING) -> NT
 /// Hash: 0x05A19C8A
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_rename_transaction_manager(
     log_file_name: PUNICODE_STRING,
     existing_transaction_manager_guid: PVOID,
@@ -43813,7 +43431,6 @@ pub unsafe fn nt_rename_transaction_manager(
 /// Hash: 0x6DDDB28B
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_replace_key(
     new_file: POBJECT_ATTRIBUTES,
     target_handle: HANDLE,
@@ -43920,7 +43537,6 @@ pub unsafe fn nt_replace_key(
 /// Hash: 0xD470E8D8
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_replace_partition_unit(
     target_instance_path: PUNICODE_STRING,
     spare_instance_path: PUNICODE_STRING,
@@ -44027,7 +43643,6 @@ pub unsafe fn nt_replace_partition_unit(
 /// Hash: 0x2AB41B18
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_reply_port(
     port_handle: HANDLE,
     reply_message: PPORT_MESSAGE,
@@ -44125,7 +43740,6 @@ pub unsafe fn nt_reply_port(port_handle: HANDLE, reply_message: PPORT_MESSAGE) -
 /// Hash: 0x26B40F2E
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_reply_wait_receive_port(
     port_handle: HANDLE,
     port_context: PVOID,
@@ -44238,7 +43852,6 @@ pub unsafe fn nt_reply_wait_receive_port(
 /// Hash: 0xA99BF57F
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_reply_wait_receive_port_ex(
     port_handle: HANDLE,
     port_context: *mut ULONG,
@@ -44356,7 +43969,6 @@ pub unsafe fn nt_reply_wait_receive_port_ex(
 /// Hash: 0xDAB5DF25
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_reply_wait_reply_port(
     port_handle: HANDLE,
     reply_message: PPORT_MESSAGE,
@@ -44457,7 +44069,6 @@ pub unsafe fn nt_reply_wait_reply_port(
 /// Hash: 0x9F25A268
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_request_device_wakeup(device_handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -44548,7 +44159,6 @@ pub unsafe fn nt_request_device_wakeup(device_handle: HANDLE) -> NTSTATUS {
 /// Hash: 0xA130A8B5
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_request_port(
     port_handle: HANDLE,
     request_message: PPORT_MESSAGE,
@@ -44646,7 +44256,6 @@ pub unsafe fn nt_request_port(port_handle: HANDLE, request_message: PPORT_MESSAG
 /// Hash: 0x32B52B38
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_request_wait_reply_port(
     port_handle: HANDLE,
     request_message: PPORT_MESSAGE,
@@ -44753,7 +44362,6 @@ pub unsafe fn nt_request_wait_reply_port(
 /// Hash: 0x02AA3D0E
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_request_wakeup_latency(latency_time: ULONG) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -44844,7 +44452,6 @@ pub unsafe fn nt_request_wakeup_latency(latency_time: ULONG) -> NTSTATUS {
 /// Hash: 0x10F07518
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_reset_event(
     event_handle: HANDLE,
     previous_state: *mut ULONG,
@@ -44942,7 +44549,6 @@ pub unsafe fn nt_reset_event(event_handle: HANDLE, previous_state: *mut ULONG) -
 /// Hash: 0xF4991104
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_reset_write_watch(
     process_handle: HANDLE,
     base_address: PVOID,
@@ -45049,7 +44655,6 @@ pub unsafe fn nt_reset_write_watch(
 /// Hash: 0x15AEF6C4
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_restore_key(
     key_handle: HANDLE,
     file_handle: HANDLE,
@@ -45152,7 +44757,6 @@ pub unsafe fn nt_restore_key(key_handle: HANDLE, file_handle: HANDLE, flags: ULO
 /// Hash: 0xE1BCD810
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_resume_process(process_handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -45243,7 +44847,6 @@ pub unsafe fn nt_resume_process(process_handle: HANDLE) -> NTSTATUS {
 /// Hash: 0x93300A16
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_resume_thread(
     thread_handle: HANDLE,
     previous_suspend_count: *mut ULONG,
@@ -45344,7 +44947,6 @@ pub unsafe fn nt_resume_thread(
 /// Hash: 0x1E803E13
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_revert_container_impersonation() -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -45430,7 +45032,6 @@ pub unsafe fn nt_revert_container_impersonation() -> NTSTATUS {
 /// Hash: 0x2D5101D8
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_rollback_complete(
     enlistment_handle: HANDLE,
     tm_virtual_clock: *mut LARGE_INTEGER,
@@ -45531,7 +45132,6 @@ pub unsafe fn nt_rollback_complete(
 /// Hash: 0xABA6AC2D
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_rollback_enlistment(
     enlistment_handle: HANDLE,
     tm_virtual_clock: *mut LARGE_INTEGER,
@@ -45632,7 +45232,6 @@ pub unsafe fn nt_rollback_enlistment(
 /// Hash: 0xE44FA29F
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_rollback_registry_transaction(
     registry_handle: HANDLE,
     wait: BOOL,
@@ -45730,7 +45329,6 @@ pub unsafe fn nt_rollback_registry_transaction(registry_handle: HANDLE, wait: BO
 /// Hash: 0x1650C91C
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_rollback_savepoint_transaction(
     transaction_handle: HANDLE,
     save_point_id: ULONG,
@@ -45831,7 +45429,6 @@ pub unsafe fn nt_rollback_savepoint_transaction(
 /// Hash: 0xF3A7D1F3
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_rollback_transaction(
     transaction_handle: HANDLE,
     wait: BOOLEAN,
@@ -45929,7 +45526,6 @@ pub unsafe fn nt_rollback_transaction(transaction_handle: HANDLE, wait: BOOLEAN)
 /// Hash: 0xE33CEDA0
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_rollforward_transaction_manager(
     transaction_manager_handle: HANDLE,
     tm_virtual_clock: *mut LARGE_INTEGER,
@@ -46030,7 +45626,6 @@ pub unsafe fn nt_rollforward_transaction_manager(
 /// Hash: 0x6E2E9A54
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_save_key(key_handle: HANDLE, file_handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -46125,7 +45720,6 @@ pub unsafe fn nt_save_key(key_handle: HANDLE, file_handle: HANDLE) -> NTSTATUS {
 /// Hash: 0xF27AB0A1
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_save_key_ex(
     key_handle: HANDLE,
     file_handle: HANDLE,
@@ -46228,7 +45822,6 @@ pub unsafe fn nt_save_key_ex(key_handle: HANDLE, file_handle: HANDLE, format: UL
 /// Hash: 0x09B13E36
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_save_merged_keys(
     high_precedence_key_handle: HANDLE,
     low_precedence_key_handle: HANDLE,
@@ -46335,7 +45928,6 @@ pub unsafe fn nt_save_merged_keys(
 /// Hash: 0x2E50DE3E
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_savepoint_complete(
     transaction_handle: HANDLE,
     tm_virtual_clock: *mut LARGE_INTEGER,
@@ -46436,7 +46028,6 @@ pub unsafe fn nt_savepoint_complete(
 /// Hash: 0x28601F25
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_savepoint_transaction(
     transaction_handle: HANDLE,
     flag: BOOLEAN,
@@ -46543,7 +46134,6 @@ pub unsafe fn nt_savepoint_transaction(
 /// Hash: 0x30B1233E
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_secure_connect_port(
     port_handle: *mut HANDLE,
     port_name: PUNICODE_STRING,
@@ -46681,7 +46271,6 @@ pub unsafe fn nt_secure_connect_port(
 /// Hash: 0x9080FE53
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_serialize_boot() -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -46767,7 +46356,6 @@ pub unsafe fn nt_serialize_boot() -> NTSTATUS {
 /// Hash: 0x914AEBA3
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_boot_entry_order(ids: *mut ULONG, count: ULONG) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -46862,7 +46450,6 @@ pub unsafe fn nt_set_boot_entry_order(ids: *mut ULONG, count: ULONG) -> NTSTATUS
 /// Hash: 0x499A6F31
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_boot_options(
     boot_options: PBOOT_OPTIONS,
     fields_to_change: ULONG,
@@ -46963,7 +46550,6 @@ pub unsafe fn nt_set_boot_options(
 /// Hash: 0xB6BBF200
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_cached_signing_level(
     flags: ULONG,
     input_signing_level: PVOID,
@@ -47081,7 +46667,6 @@ pub unsafe fn nt_set_cached_signing_level(
 /// Hash: 0xB60D1FD6
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_cached_signing_level2(
     flags: ULONG,
     input_signing_level: ULONG,
@@ -47204,7 +46789,6 @@ pub unsafe fn nt_set_cached_signing_level2(
 /// Hash: 0x321EFD35
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_context_thread(
     thread_handle: HANDLE,
     context: PCONTEXT,
@@ -47302,7 +46886,6 @@ pub unsafe fn nt_set_context_thread(thread_handle: HANDLE, context: PCONTEXT) ->
 /// Hash: 0x3E813822
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_debug_filter_state(
     component_id: ULONG,
     level: ULONG,
@@ -47409,7 +46992,6 @@ pub unsafe fn nt_set_debug_filter_state(
 /// Hash: 0x24BDA7B2
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_default_hard_error_port(port_handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -47500,7 +47082,6 @@ pub unsafe fn nt_set_default_hard_error_port(port_handle: HANDLE) -> NTSTATUS {
 /// Hash: 0x05AB1B11
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_default_locale(
     user_profile: BOOLEAN,
     default_locale_id: LCID,
@@ -47598,7 +47179,6 @@ pub unsafe fn nt_set_default_locale(user_profile: BOOLEAN, default_locale_id: LC
 /// Hash: 0x33822036
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_default_ui_language(default_ui_language_id: LANGID) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -47689,7 +47269,6 @@ pub unsafe fn nt_set_default_ui_language(default_ui_language_id: LANGID) -> NTST
 /// Hash: 0x12098904
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_driver_entry_order(ids: *mut ULONG, count: *mut ULONG) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -47784,7 +47363,6 @@ pub unsafe fn nt_set_driver_entry_order(ids: *mut ULONG, count: *mut ULONG) -> N
 /// Hash: 0x2299AAAE
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_ea_file(
     file_handle: HANDLE,
     io_status_block: PIO_STATUS_BLOCK,
@@ -47897,7 +47475,6 @@ pub unsafe fn nt_set_ea_file(
 /// Hash: 0x594BBC52
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_event(
     event_handle: HANDLE,
     previous_state: *mut ULONG,
@@ -47995,7 +47572,6 @@ pub unsafe fn nt_set_event(event_handle: HANDLE, previous_state: *mut ULONG) -> 
 /// Hash: 0x44A25048
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_event_boost_priority(event_handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -48086,7 +47662,6 @@ pub unsafe fn nt_set_event_boost_priority(event_handle: HANDLE) -> NTSTATUS {
 /// Hash: 0x9918ADA3
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_event_ex(
     event_handle: HANDLE,
     flags: ULONG,
@@ -48193,7 +47768,6 @@ pub unsafe fn nt_set_event_ex(
 /// Hash: 0xEB5BB99C
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_high_event_pair(event_pair_handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -48284,7 +47858,6 @@ pub unsafe fn nt_set_high_event_pair(event_pair_handle: HANDLE) -> NTSTATUS {
 /// Hash: 0x64D3F8FD
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_high_wait_low_event_pair(event_pair_handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -48375,7 +47948,6 @@ pub unsafe fn nt_set_high_wait_low_event_pair(event_pair_handle: HANDLE) -> NTST
 /// Hash: 0x9FA6B51E
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_ir_timer(
     timer_handle: HANDLE,
     due_time: *mut LARGE_INTEGER,
@@ -48473,7 +48045,6 @@ pub unsafe fn nt_set_ir_timer(timer_handle: HANDLE, due_time: *mut LARGE_INTEGER
 /// Hash: 0x4ED84E4B
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_information_cpu_partition(
     partition_handle: HANDLE,
     partition_information_class: ULONG,
@@ -48586,7 +48157,6 @@ pub unsafe fn nt_set_information_cpu_partition(
 /// Hash: 0x039DF193
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_information_debug_object(
     debug_object: HANDLE,
     information_class: u32,
@@ -48704,7 +48274,6 @@ pub unsafe fn nt_set_information_debug_object(
 /// Hash: 0xB7294E23
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_information_enlistment(
     enlistment_handle: HANDLE,
     enlistment_information_class: u32,
@@ -48817,7 +48386,6 @@ pub unsafe fn nt_set_information_enlistment(
 /// Hash: 0x27BE5D29
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_information_file(
     file_handle: HANDLE,
     io_status_block: PIO_STATUS_BLOCK,
@@ -48935,7 +48503,6 @@ pub unsafe fn nt_set_information_file(
 /// Hash: 0xBC239276
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_information_io_ring(
     io_ring_handle: HANDLE,
     io_ring_information_class: ULONG,
@@ -49048,7 +48615,6 @@ pub unsafe fn nt_set_information_io_ring(
 /// Hash: 0xB8958819
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_information_job_object(
     job_handle: HANDLE,
     job_object_information_class: u32,
@@ -49161,7 +48727,6 @@ pub unsafe fn nt_set_information_job_object(
 /// Hash: 0x9015B78A
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_information_key(
     key_handle: HANDLE,
     key_set_information_class: u32,
@@ -49274,7 +48839,6 @@ pub unsafe fn nt_set_information_key(
 /// Hash: 0x2EB65659
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_information_object(
     handle: HANDLE,
     object_information_class: u32,
@@ -49387,7 +48951,6 @@ pub unsafe fn nt_set_information_object(
 /// Hash: 0x5F917C3E
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_information_process(
     device_handle: HANDLE,
     process_information_class: u32,
@@ -49500,7 +49063,6 @@ pub unsafe fn nt_set_information_process(
 /// Hash: 0x092A47F6
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_information_resource_manager(
     resource_manager_handle: HANDLE,
     resource_manager_information_class: u32,
@@ -49613,7 +49175,6 @@ pub unsafe fn nt_set_information_resource_manager(
 /// Hash: 0xB6958618
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_information_silo_object(
     silo_handle: HANDLE,
     silo_information_class: ULONG,
@@ -49726,7 +49287,6 @@ pub unsafe fn nt_set_information_silo_object(
 /// Hash: 0x2CBF202E
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_information_symbolic_link(
     handle: HANDLE,
     class: ULONG,
@@ -49839,7 +49399,6 @@ pub unsafe fn nt_set_information_symbolic_link(
 /// Hash: 0x94C75EE8
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_information_thread(
     thread_handle: HANDLE,
     thread_information_class: u32,
@@ -49952,7 +49511,6 @@ pub unsafe fn nt_set_information_thread(
 /// Hash: 0x0DA9792A
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_information_token(
     token_handle: HANDLE,
     token_information_class: u32,
@@ -50065,7 +49623,6 @@ pub unsafe fn nt_set_information_token(
 /// Hash: 0xCE912805
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_information_transaction(
     transaction_handle: HANDLE,
     transaction_information_class: u32,
@@ -50178,7 +49735,6 @@ pub unsafe fn nt_set_information_transaction(
 /// Hash: 0xE73FF1A4
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_information_transaction_manager(
     transaction_handle: HANDLE,
     transaction_information_class: u32,
@@ -50291,7 +49847,6 @@ pub unsafe fn nt_set_information_transaction_manager(
 /// Hash: 0x3190351F
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_information_virtual_memory(
     process_handle: HANDLE,
     vm_information_class: u32,
@@ -50414,7 +49969,6 @@ pub unsafe fn nt_set_information_virtual_memory(
 /// Hash: 0xF8EEE47B
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_information_worker_factory(
     worker_factory_handle: HANDLE,
     worker_factory_information_class: u32,
@@ -50527,7 +50081,6 @@ pub unsafe fn nt_set_information_worker_factory(
 /// Hash: 0x0C9D423E
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_interval_profile(interval: ULONG, source: u32) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -50622,7 +50175,6 @@ pub unsafe fn nt_set_interval_profile(interval: ULONG, source: u32) -> NTSTATUS 
 /// Hash: 0x9835BAA5
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_io_completion(
     io_completion_handle: HANDLE,
     completion_key: ULONG,
@@ -50740,7 +50292,6 @@ pub unsafe fn nt_set_io_completion(
 /// Hash: 0xDA90FE2C
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_io_completion_ex(
     io_completion_handle: HANDLE,
     io_completion_packet_handle: HANDLE,
@@ -50863,7 +50414,6 @@ pub unsafe fn nt_set_io_completion_ex(
 /// Hash: 0x089CFBF0
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_ldt_entries(
     selector0: ULONG,
     entry0_low: ULONG,
@@ -50986,7 +50536,6 @@ pub unsafe fn nt_set_ldt_entries(
 /// Hash: 0x02B27E5F
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_low_event_pair(event_pair_handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -51077,7 +50626,6 @@ pub unsafe fn nt_set_low_event_pair(event_pair_handle: HANDLE) -> NTSTATUS {
 /// Hash: 0x90B4A812
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_low_wait_high_event_pair(event_pair_handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -51168,7 +50716,6 @@ pub unsafe fn nt_set_low_wait_high_event_pair(event_pair_handle: HANDLE) -> NTST
 /// Hash: 0xE576DBE3
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_quota_information_file(
     file_handle: HANDLE,
     io_status_block: PIO_STATUS_BLOCK,
@@ -51281,7 +50828,6 @@ pub unsafe fn nt_set_quota_information_file(
 /// Hash: 0xEEDCC640
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_security_object(
     object_handle: HANDLE,
     security_information_class: PVOID,
@@ -51388,7 +50934,6 @@ pub unsafe fn nt_set_security_object(
 /// Hash: 0x1AB1490A
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_system_environment_value(
     variable_name: PUNICODE_STRING,
     value: PUNICODE_STRING,
@@ -51489,7 +51034,6 @@ pub unsafe fn nt_set_system_environment_value(
 /// Hash: 0x43BA97E6
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_system_environment_value_ex(
     variable_name: PUNICODE_STRING,
     vendor_guid: PVOID,
@@ -51607,7 +51151,6 @@ pub unsafe fn nt_set_system_environment_value_ex(
 /// Hash: 0xCE5FE8CB
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_system_information(
     system_information_class: u32,
     system_information: PVOID,
@@ -51714,7 +51257,6 @@ pub unsafe fn nt_set_system_information(
 /// Hash: 0x8E3186A2
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_system_power_state(
     system_action: u32,
     min_system_state: u32,
@@ -51821,7 +51363,6 @@ pub unsafe fn nt_set_system_power_state(
 /// Hash: 0x6CAA517B
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_system_time(
     system_time: *mut LARGE_INTEGER,
     previous_time: *mut LARGE_INTEGER,
@@ -51922,7 +51463,6 @@ pub unsafe fn nt_set_system_time(
 /// Hash: 0xF26B98A6
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_thread_execution_state(
     execution_state: PVOID,
     previous_execution_state: PVOID,
@@ -52023,7 +51563,6 @@ pub unsafe fn nt_set_thread_execution_state(
 /// Hash: 0x7DCA1534
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_timer(
     timer_handle: HANDLE,
     due_time: *mut LARGE_INTEGER,
@@ -52151,7 +51690,6 @@ pub unsafe fn nt_set_timer(
 /// Hash: 0x49B791B9
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_timer2(
     timer_handle: HANDLE,
     due_time: *mut LARGE_INTEGER,
@@ -52264,7 +51802,6 @@ pub unsafe fn nt_set_timer2(
 /// Hash: 0xEEFDB823
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_timer_ex(
     timer_handle: HANDLE,
     timer_set_information_class: u32,
@@ -52377,7 +51914,6 @@ pub unsafe fn nt_set_timer_ex(
 /// Hash: 0x5CD67C45
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_timer_resolution(
     desired_resolution: ULONG,
     set_resolution: BOOLEAN,
@@ -52484,7 +52020,6 @@ pub unsafe fn nt_set_timer_resolution(
 /// Hash: 0x47DF5172
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_uuid_seed(seed: *mut UCHAR) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -52575,7 +52110,6 @@ pub unsafe fn nt_set_uuid_seed(seed: *mut UCHAR) -> NTSTATUS {
 /// Hash: 0xDA5BCFC9
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_value_key(
     key_handle: HANDLE,
     value_name: PUNICODE_STRING,
@@ -52698,7 +52232,6 @@ pub unsafe fn nt_set_value_key(
 /// Hash: 0xB91A232C
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_volume_information_file(
     file_handle: HANDLE,
     io_status_block: PIO_STATUS_BLOCK,
@@ -52816,7 +52349,6 @@ pub unsafe fn nt_set_volume_information_file(
 /// Hash: 0x600379EE
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_set_wnf_process_notification_event(
     notification_event: HANDLE,
 ) -> NTSTATUS {
@@ -52909,7 +52441,6 @@ pub unsafe fn nt_set_wnf_process_notification_event(notification_event: HANDLE) 
 /// Hash: 0x019F3445
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_shutdown_system(action: u32) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -53000,7 +52531,6 @@ pub unsafe fn nt_shutdown_system(action: u32) -> NTSTATUS {
 /// Hash: 0xC48AF642
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_shutdown_worker_factory(
     worker_factory_handle: HANDLE,
     pending_worker_count: *mut LONG,
@@ -53101,7 +52631,6 @@ pub unsafe fn nt_shutdown_worker_factory(
 /// Hash: 0x06987045
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_signal_and_wait_for_single_object(
     h_object_to_signal: HANDLE,
     h_object_to_wait_on: HANDLE,
@@ -53214,7 +52743,6 @@ pub unsafe fn nt_signal_and_wait_for_single_object(
 /// Hash: 0x30AD0021
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_single_phase_reject(
     enlistment_handle: HANDLE,
     tm_virtual_clock: *mut LARGE_INTEGER,
@@ -53315,7 +52843,6 @@ pub unsafe fn nt_single_phase_reject(
 /// Hash: 0xA03BF080
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_start_profile(profile_handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -53406,7 +52933,6 @@ pub unsafe fn nt_start_profile(profile_handle: HANDLE) -> NTSTATUS {
 /// Hash: 0x3D901F2E
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_start_tm() -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -53492,7 +53018,6 @@ pub unsafe fn nt_start_tm() -> NTSTATUS {
 /// Hash: 0x039B1723
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_stop_profile(profile_handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -53583,7 +53108,6 @@ pub unsafe fn nt_stop_profile(profile_handle: HANDLE) -> NTSTATUS {
 /// Hash: 0x9889F048
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_submit_io_ring(
     io_ring_handle: HANDLE,
     flags: ULONG,
@@ -53696,7 +53220,6 @@ pub unsafe fn nt_submit_io_ring(
 /// Hash: 0x3E9F7722
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_subscribe_wnf_state_change(
     state_name: PCWNF_STATE_NAME,
     change_stamp: PVOID,
@@ -53809,7 +53332,6 @@ pub unsafe fn nt_subscribe_wnf_state_change(
 /// Hash: 0x9D1F9C92
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_suspend_process(process_handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -53900,7 +53422,6 @@ pub unsafe fn nt_suspend_process(process_handle: HANDLE) -> NTSTATUS {
 /// Hash: 0x842D9693
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_suspend_thread(
     thread_handle: HANDLE,
     previous_suspend_count: *mut ULONG,
@@ -54001,7 +53522,6 @@ pub unsafe fn nt_suspend_thread(
 /// Hash: 0x855E81CD
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_system_debug_control(
     command: u32,
     input_buffer: PVOID,
@@ -54124,7 +53644,6 @@ pub unsafe fn nt_system_debug_control(
 /// Hash: 0x04ABF8F8
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_terminate_enclave(
     base_address: PVOID,
     wait_for_thread: BOOLEAN,
@@ -54222,7 +53741,6 @@ pub unsafe fn nt_terminate_enclave(base_address: PVOID, wait_for_thread: BOOLEAN
 /// Hash: 0x6B5457CB
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_terminate_job_object(
     job_handle: HANDLE,
     exit_status: NTSTATUS,
@@ -54320,7 +53838,6 @@ pub unsafe fn nt_terminate_job_object(job_handle: HANDLE, exit_status: NTSTATUS)
 /// Hash: 0x3BC33A4E
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_terminate_process(
     process_handle: HANDLE,
     exit_status: NTSTATUS,
@@ -54418,7 +53935,6 @@ pub unsafe fn nt_terminate_process(process_handle: HANDLE, exit_status: NTSTATUS
 /// Hash: 0xEFB005EF
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_terminate_silo_object(
     silo_handle: HANDLE,
     exit_status: NTSTATUS,
@@ -54516,7 +54032,6 @@ pub unsafe fn nt_terminate_silo_object(silo_handle: HANDLE, exit_status: NTSTATU
 /// Hash: 0xCA8B14C9
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_terminate_thread(
     thread_handle: HANDLE,
     exit_status: NTSTATUS,
@@ -54614,7 +54129,6 @@ pub unsafe fn nt_terminate_thread(thread_handle: HANDLE, exit_status: NTSTATUS) 
 /// Hash: 0x14A61334
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_test_alert() -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -54700,7 +54214,6 @@ pub unsafe fn nt_test_alert() -> NTSTATUS {
 /// Hash: 0xC24BD8D7
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_thaw_registry() -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -54786,7 +54299,6 @@ pub unsafe fn nt_thaw_registry() -> NTSTATUS {
 /// Hash: 0xBF62FDB5
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_thaw_transactions() -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -54872,7 +54384,6 @@ pub unsafe fn nt_thaw_transactions() -> NTSTATUS {
 /// Hash: 0xE1AA1B2C
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_trace_control(
     function_code: ULONG,
     input_buffer: PVOID,
@@ -54995,7 +54506,6 @@ pub unsafe fn nt_trace_control(
 /// Hash: 0x094AEB3C
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_trace_event(
     trace_handle: HANDLE,
     flags: ULONG,
@@ -55108,7 +54618,6 @@ pub unsafe fn nt_trace_event(
 /// Hash: 0xB3D2BFB6
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_translate_file_path(
     input_file_path: PFILE_PATH,
     output_type: ULONG,
@@ -55221,7 +54730,6 @@ pub unsafe fn nt_translate_file_path(
 /// Hash: 0xA4B8EF1F
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_ums_thread_yield(scheduler_param: PVOID) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -55312,7 +54820,6 @@ pub unsafe fn nt_ums_thread_yield(scheduler_param: PVOID) -> NTSTATUS {
 /// Hash: 0x2E9F0636
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_unload_driver(driver_service_name: PUNICODE_STRING) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -55403,7 +54910,6 @@ pub unsafe fn nt_unload_driver(driver_service_name: PUNICODE_STRING) -> NTSTATUS
 /// Hash: 0x1BEC1874
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_unload_key(destination_key_name: POBJECT_ATTRIBUTES) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -55494,7 +55000,6 @@ pub unsafe fn nt_unload_key(destination_key_name: POBJECT_ATTRIBUTES) -> NTSTATU
 /// Hash: 0x6FF786E8
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_unload_key2(target_key: POBJECT_ATTRIBUTES, flags: ULONG) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -55589,7 +55094,6 @@ pub unsafe fn nt_unload_key2(target_key: POBJECT_ATTRIBUTES, flags: ULONG) -> NT
 /// Hash: 0xBF9FCB63
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_unload_key_ex(
     target_key: POBJECT_ATTRIBUTES,
     event: HANDLE,
@@ -55687,7 +55191,6 @@ pub unsafe fn nt_unload_key_ex(target_key: POBJECT_ATTRIBUTES, event: HANDLE) ->
 /// Hash: 0x82D9807E
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_unlock_file(
     file_handle: HANDLE,
     io_status_block: PIO_STATUS_BLOCK,
@@ -55805,7 +55308,6 @@ pub unsafe fn nt_unlock_file(
 /// Hash: 0x47D45359
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_unlock_virtual_memory(
     process_handle: HANDLE,
     base_address: *mut PVOID,
@@ -55918,7 +55420,6 @@ pub unsafe fn nt_unlock_virtual_memory(
 /// Hash: 0x1688341D
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_unmap_view_of_section(
     process_handle: HANDLE,
     base_address: PVOID,
@@ -56016,7 +55517,6 @@ pub unsafe fn nt_unmap_view_of_section(process_handle: HANDLE, base_address: PVO
 /// Hash: 0x2E956E4C
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_unmap_view_of_section_ex(
     process_handle: HANDLE,
     base_address: PVOID,
@@ -56123,7 +55623,6 @@ pub unsafe fn nt_unmap_view_of_section_ex(
 /// Hash: 0x5ECF5F52
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_unsubscribe_wnf_state_change(state_name: PCWNF_STATE_NAME) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -56214,7 +55713,6 @@ pub unsafe fn nt_unsubscribe_wnf_state_change(state_name: PCWNF_STATE_NAME) -> N
 /// Hash: 0x3F206997
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_update_wnf_state_data(
     state_name: PCWNF_STATE_NAME,
     buffer: PVOID,
@@ -56342,7 +55840,6 @@ pub unsafe fn nt_update_wnf_state_data(
 /// Hash: 0x41E92D31
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_vdm_control(service: u32, service_data: PVOID) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -56437,7 +55934,6 @@ pub unsafe fn nt_vdm_control(service: u32, service_data: PVOID) -> NTSTATUS {
 /// Hash: 0x1888FEF2
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_wait_for_alert_by_thread_id(
     handle: HANDLE,
     timeout: *mut LARGE_INTEGER,
@@ -56538,7 +56034,6 @@ pub unsafe fn nt_wait_for_alert_by_thread_id(
 /// Hash: 0x480F4D9E
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_wait_for_debug_event(
     debug_object_handle: HANDLE,
     alertable: BOOLEAN,
@@ -56651,7 +56146,6 @@ pub unsafe fn nt_wait_for_debug_event(
 /// Hash: 0xE852D1E4
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_wait_for_keyed_event(
     keyed_event_handle: HANDLE,
     key: PVOID,
@@ -56764,7 +56258,6 @@ pub unsafe fn nt_wait_for_keyed_event(
 /// Hash: 0x823F9CBC
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_wait_for_multiple_objects(
     count: ULONG,
     handles: *mut HANDLE,
@@ -56882,7 +56375,6 @@ pub unsafe fn nt_wait_for_multiple_objects(
 /// Hash: 0x5E83666A
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_wait_for_multiple_objects32(
     object_count: ULONG,
     handles: *mut HANDLE,
@@ -57000,7 +56492,6 @@ pub unsafe fn nt_wait_for_multiple_objects32(
 /// Hash: 0x663C6CA2
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_wait_for_single_object(
     object_handle: HANDLE,
     alertable: BOOLEAN,
@@ -57107,7 +56598,6 @@ pub unsafe fn nt_wait_for_single_object(
 /// Hash: 0xCD28D74F
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_wait_for_wnf_notifications() -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -57193,7 +56683,6 @@ pub unsafe fn nt_wait_for_wnf_notifications() -> NTSTATUS {
 /// Hash: 0x088C0E14
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_wait_for_work_via_worker_factory(
     worker_factory_handle: HANDLE,
     mini_packet: PVOID,
@@ -57294,7 +56783,6 @@ pub unsafe fn nt_wait_for_work_via_worker_factory(
 /// Hash: 0x14943409
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_wait_high_event_pair(event_handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -57385,7 +56873,6 @@ pub unsafe fn nt_wait_high_event_pair(event_handle: HANDLE) -> NTSTATUS {
 /// Hash: 0x36EE7C31
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_wait_low_event_pair(event_handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -57476,7 +56963,6 @@ pub unsafe fn nt_wait_low_event_pair(event_handle: HANDLE) -> NTSTATUS {
 /// Hash: 0xF253D0F8
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_worker_factory_worker_ready(worker_factory_handle: HANDLE) -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)
@@ -57567,7 +57053,6 @@ pub unsafe fn nt_worker_factory_worker_ready(worker_factory_handle: HANDLE) -> N
 /// Hash: 0x89389B8F
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_write_file(
     file_handle: HANDLE,
     event: HANDLE,
@@ -57705,7 +57190,6 @@ pub unsafe fn nt_write_file(
 /// Hash: 0x17B66577
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_write_file_gather(
     file_handle: HANDLE,
     event: HANDLE,
@@ -57843,7 +57327,6 @@ pub unsafe fn nt_write_file_gather(
 /// Hash: 0x5885922E
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_write_request_data(
     port_handle: HANDLE,
     request: PPORT_MESSAGE,
@@ -57966,7 +57449,6 @@ pub unsafe fn nt_write_request_data(
 /// Hash: 0x0B9B031B
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_write_virtual_memory(
     process_handle: HANDLE,
     base_address: PVOID,
@@ -58084,7 +57566,6 @@ pub unsafe fn nt_write_virtual_memory(
 /// Hash: 0x0C922A07
 #[cfg(target_arch = "x86_64")]
 #[unsafe(naked)]
-#[unsafe(link_section = ".text")]
 pub unsafe extern "C" fn nt_yield_execution() -> NTSTATUS {
     // Naked function - exact replica of C/ASM pattern:
     // 1. Save params to shadow space (caller allocated 0x20 bytes)

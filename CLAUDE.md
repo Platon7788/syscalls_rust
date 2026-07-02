@@ -1,6 +1,17 @@
 # CLAUDE.md - syscalls-rust
 
-## Проект
+> **⚠️ LEGACY / ARCHIVED.** Активная разработка переехала в отдельный
+> репозиторий **[SysCalls (RSC)](https://github.com/Platon7788/SysCalls)**
+> — `D:\GitHub\Rust_Projects\SysCalls\`.
+>
+> Этот каталог (`syscalls-rust/`, без подпапки `SysCalls/`) остаётся как
+> референс-архив SysWhispers3-генерированной реализации. Новые фичи,
+> багфиксы, обновления под новые Windows-build'ы идут только в SysCalls.
+>
+> Используй RSC: он покрывает 509 функций (Win10+Win11 unioned), не требует
+> nightly, собирается без внешних Python-генераторов.
+
+## Проект (LEGACY)
 
 **syscalls-rust** v0.1.0 -- библиотека прямых Windows NT syscall'ов на Rust (SysWhispers3), с полными C/C++ биндингами.
 
@@ -78,6 +89,66 @@ c-bindings/
 - **Runtime**: нет (`#![no_std]`)
 - **Build (c-bindings)**: `regex = "1"` (для парсинга Rust → C header)
 - **System**: ntdll.dll (в памяти, не линкуется)
+
+## Low-Level Quality Standards
+
+Правила качества на основе [lowleveldevskills.com](https://www.lowleveldevskills.com/) и [rust-skills](https://github.com/actionbook/rust-skills) — применяй при написании и ревью кода.
+
+### Assembly / x86 & x86_64 (assembly-x86)
+- **Calling conventions**: x64 = Microsoft x64 (RCX, RDX, R8, R9 + shadow space 0x28), x86 = stdcall/cdecl — критично для naked syscall функций
+- **Register preservation**: x64 callee-saved: RBX, RBP, RDI, RSI, R12-R15; x86 callee-saved: EBX, ESI, EDI, EBP
+- **Naked functions** (`#[unsafe(naked)]`): компилятор не генерирует prologue/epilogue — всё вручную через `naked_asm!`
+- **Inline ASM** (`core::arch::asm!`): clobbers, in/out constraints, `sym` для вызова Rust-функций из ASM
+- **Syscall ABI**: x64: syscall number в EAX, param1 = R10 (не RCX!), остальные RDX, R8, R9; x86: EAX + EDX = ESP
+- **WoW64 gate**: `fs:[0xC0]` (WoW64Reserved) — если != 0, процесс WoW64, вызов через gate вместо sysenter
+- При модификации ASM — проверяй **оба** пути (x64 native и x86/WoW64)
+
+### PE Parsing & PEB (binary inspection)
+- **PEB доступ**: x64 = `gs:[0x60]`, x86 = `fs:[0x30]` — через inline ASM, не через NtQueryInformationProcess
+- **InLoadOrderModuleList**: PEB → Ldr → InLoadOrderModuleList — linked list `LIST_ENTRY` (Flink/Blink)
+- **PE header validation**: всегда проверяй `e_magic == 0x5A4D` (MZ) и `Signature == 0x00004550` (PE) перед парсингом
+- **Export table walk**: Export Directory → AddressOfNames → binary/linear search → AddressOfNameOrdinals → AddressOfFunctions
+- **RVA to pointer**: `base + RVA` — проверяй что RVA в пределах секции перед dereference
+- Все парсинг-структуры (`ImageDosHeader`, `ImageNtHeaders`, `ImageExportDirectory`) — raw pointer cast, не `transmute`
+
+### Memory Model & Atomics (memory-model, concurrency)
+- **Static mut**: `SW3_SYSCALL_LIST` — глобальный mutable state, race condition при первом вызове из нескольких потоков идемпотентен (все вычисляют одинаковый результат)
+- **Ordering**: `Acquire` при чтении `.count`, `Release` при записи — publish pattern для lazy init
+- x86/x64 TSO гарантирует: store-store и load-load не переупорядочиваются, но store-load может — для syscall table это не проблема (write-once)
+
+### Hash Obfuscation & Anti-Detection (binary-hardening)
+- **ROR8 hash**: seed `0xB8A54425` — deterministic, но не reversible без brute-force
+- Хеши вычисляются **compile-time** (hardcoded в каждой syscall функции) — не меняй seed без пересчёта всех хешей
+- **HalosGate pattern**: если функция в ntdll захучена (начинается не с `0x4C, 0x8B, 0xD1, 0xB8`), ищет соседние функции ±512 для восстановления номера syscall
+- **Jumper mode**: прыжок на `syscall; ret` в случайной функции ntdll — скрывает реальный return address от call stack analysis
+
+### Unsafe Rust & Safety (rust-unsafe)
+- **Масштаб unsafe**: весь lib.rs — inherently unsafe (inline ASM, raw pointers, static mut, FFI)
+- **Safety invariants** для каждого unsafe блока: документируй через `// SAFETY:` комментарий
+- **Naked functions**: `#[unsafe(naked)]` — компилятор не вставляет prologue, не проверяет ABI — полная ответственность на разработчике
+- **Raw pointer arithmetic**: `.add()`, `.sub()`, `.offset()` — всё unsafe, проверяй bounds перед dereference
+- **Никогда** `transmute` для PE-структур — используй `ptr as *const ImageDosHeader`
+
+### FFI / C Bindings (rust-ffi)
+- `#[no_mangle] extern "C"` для всех экспортируемых функций
+- `#[repr(C)]` для структур в header
+- C wrappers в `c-bindings/src/lib.rs` — автогенерируются через `build.rs`
+- При изменении сигнатур в lib.rs — **всегда** проверяй что `c-bindings/build.rs` корректно парсит и `syscalls.h` обновился
+- Не передавай Rust-типы (String, Vec, Box) через FFI — только raw pointers + primitive types
+
+### Build & Optimization (rustc, profiling)
+- `opt-level = "z"` — оптимизация по размеру (критично для injectable библиотеки)
+- `lto = true` + `codegen-units = 1` — максимальный inlining, один объектный файл
+- `panic = "abort"` — без unwinding (уменьшает размер, нет CRT зависимости)
+- `strip = true` — удаление debug symbols из release
+- Feature `debug` — вставляет `int3` перед каждым syscall для отладки в отладчике
+
+### Error Handling (error-handling)
+- `NtStatus` wrapper: `is_success()`, `is_error()`, `name()` — 260+ именованных кодов
+- `NtResult<T>` = `Result<T, NtStatus>` — стандартный паттерн
+- `NtStatusExt` trait: `.to_result()` для конвертации сырого NTSTATUS
+- На FFI границе: возвращай сырой `NTSTATUS` (i32) — C-код не работает с Rust Result
+- **Никогда panic** в библиотечном коде — все ошибки через Result
 
 ## Правила для AI-ассистента
 
