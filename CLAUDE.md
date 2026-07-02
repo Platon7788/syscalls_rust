@@ -1,21 +1,22 @@
 # CLAUDE.md - syscalls-rust
 
-> **⚠️ LEGACY / ARCHIVED.** Активная разработка переехала в отдельный
-> репозиторий **[SysCalls (RSC)](https://github.com/Platon7788/SysCalls)**
-> — `D:\GitHub\Rust_Projects\SysCalls\`.
+> **Статус: активный проект.** Это основной крейт прямых NT-syscall'ов
+> для всех Rust-проектов в `D:\GitHub\Rust_Projects\` (IMGUI_NXT,
+> IMGUI_SPF, NX_DRV-MOD, PE-Protect, Vex0r, Auth-Workspace, useful-lib
+> и др.). Repo: https://github.com/Platon7788/syscalls_rust.
 >
-> Этот каталог (`syscalls-rust/`, без подпапки `SysCalls/`) остаётся как
-> референс-архив SysWhispers3-генерированной реализации. Новые фичи,
-> багфиксы, обновления под новые Windows-build'ы идут только в SysCalls.
->
-> Используй RSC: он покрывает 509 функций (Win10+Win11 unioned), не требует
-> nightly, собирается без внешних Python-генераторов.
+> Ранее существовавший «преемник» — отдельный репо `SysCalls (RSC)` —
+> удалён в июле 2026: единственный его потребитель (`useful-lib`)
+> мигрирован обратно на `syscalls-rust`, все прочие consumer'ы никогда
+> с RSC не переезжали. Ветка `SysCalls` сохранена на GitHub
+> (https://github.com/Platon7788/SysCalls) как исторический референс.
 
-## Проект (LEGACY)
+## Проект
 
 **syscalls-rust** v0.1.0 -- библиотека прямых Windows NT syscall'ов на Rust (SysWhispers3), с полными C/C++ биндингами.
 
 - `#![no_std]` -- нулевые runtime-зависимости
+- **Rust edition 2024**, MSRV 1.96
 - 513 NT syscall функций с хеш-обфускацией имён
 - Прямые syscall инструкции (x64: `syscall`, x86: `sysenter`/WoW64 gate) -- без вызова ntdll
 - Полная WoW64 поддержка (x86 на 64-bit Windows) с dummy return address
