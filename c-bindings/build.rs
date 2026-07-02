@@ -3128,37 +3128,37 @@ fn generate_c_wrappers(functions: &[Function]) -> String {
     // Generate helper functions first (only once, not in the loop)
     w.push_str("// Helper functions for SysWhispers3 runtime\n");
     w.push_str("/// Debug function to get syscall list count\n");
-    w.push_str("#[no_mangle]\n");
+    w.push_str("#[unsafe(no_mangle)]\n");
     w.push_str("pub unsafe extern \"C\" fn SW3Sw3DebugGetCount() -> u32 {\n");
     w.push_str("    sw3_debug_get_count()\n");
     w.push_str("}\n\n");
 
     w.push_str("/// Debug function to get hash at index\n");
-    w.push_str("#[no_mangle]\n");
+    w.push_str("#[unsafe(no_mangle)]\n");
     w.push_str("pub unsafe extern \"C\" fn SW3Sw3DebugGetHash(index: usize) -> u32 {\n");
     w.push_str("    sw3_debug_get_hash(index)\n");
     w.push_str("}\n\n");
 
     w.push_str("/// Debug function to get syscall address at index\n");
-    w.push_str("#[no_mangle]\n");
+    w.push_str("#[unsafe(no_mangle)]\n");
     w.push_str("pub unsafe extern \"C\" fn SW3Sw3DebugGetSyscallAddr(index: usize) -> *mut core::ffi::c_void {\n");
     w.push_str("    sw3_debug_get_syscall_addr(index)\n");
     w.push_str("}\n\n");
 
     w.push_str("/// Get syscall address for jumper mode\n");
-    w.push_str("#[no_mangle]\n");
+    w.push_str("#[unsafe(no_mangle)]\n");
     w.push_str("pub unsafe extern \"C\" fn SW3Sw3GetSyscallAddress(function_hash: u32) -> *mut core::ffi::c_void {\n");
     w.push_str("    sw3_get_syscall_address(function_hash)\n");
     w.push_str("}\n\n");
 
     w.push_str("/// Get random syscall address for return address spoofing\n");
-    w.push_str("#[no_mangle]\n");
+    w.push_str("#[unsafe(no_mangle)]\n");
     w.push_str("pub unsafe extern \"C\" fn SW3Sw3GetRandomSyscallAddress(function_hash: u32) -> *mut core::ffi::c_void {\n");
     w.push_str("    sw3_get_random_syscall_address(function_hash)\n");
     w.push_str("}\n\n");
 
     w.push_str("/// Get syscall number for function hash\n");
-    w.push_str("#[no_mangle]\n");
+    w.push_str("#[unsafe(no_mangle)]\n");
     w.push_str("pub unsafe extern \"C\" fn SW3Sw3GetSyscallNumber(function_hash: u32) -> u32 {\n");
     w.push_str("    sw3_get_syscall_number(function_hash)\n");
     w.push_str("}\n\n");
@@ -3231,7 +3231,7 @@ fn generate_c_wrappers(functions: &[Function]) -> String {
         let return_type = &func.return_type;
 
         w.push_str(&format!("/// C wrapper for {}\n", rust_func_name));
-        w.push_str("#[no_mangle]\n");
+        w.push_str("#[unsafe(no_mangle)]\n");
         w.push_str(&format!(
             "pub unsafe extern \"C\" fn {}({}) -> {} {{\n",
             sw3_func_name, params_str, return_type

@@ -38,6 +38,12 @@
 #![allow(clippy::unnecessary_cast)]
 #![allow(clippy::missing_transmute_annotations)]
 #![allow(static_mut_refs)]
+// Edition 2024 turns `unsafe_op_in_unsafe_fn` into a warn-by-default lint.
+// This crate is inherently unsafe end-to-end (inline asm, raw ptr walks over
+// PEB/PE, static-mut syscall table, FFI). Wrapping each op in `unsafe {}`
+// adds noise without safety value — safety invariants are documented per
+// function, not per operation.
+#![allow(unsafe_op_in_unsafe_fn)]
 
 // Error handling module
 pub mod error;

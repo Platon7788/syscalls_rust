@@ -1,7 +1,7 @@
 [package]
 name = "syscalls-c"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "C bindings for SysWhispers3 direct syscall library"
 license = "MIT"
 build = "build.rs"

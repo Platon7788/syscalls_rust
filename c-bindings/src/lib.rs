@@ -13,6 +13,11 @@
 #![allow(non_snake_case)]
 #![allow(clippy::missing_safety_doc)]
 #![allow(clippy::too_many_arguments)]
+// Auto-generated c_wrappers.rs forwards to raw NT syscall stubs, so every
+// wrapper body calls an unsafe fn without an explicit unsafe block. See
+// syscalls-rust lib.rs for the rationale — the whole surface is inherently
+// unsafe by design.
+#![allow(unsafe_op_in_unsafe_fn)]
 
 // Re-export everything from syscalls for Rust usage
 pub use syscalls::*;
