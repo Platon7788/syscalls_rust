@@ -129,9 +129,11 @@ c-bindings/
 - **Naked functions**: `#[unsafe(naked)]` — компилятор не вставляет prologue, не проверяет ABI — полная ответственность на разработчике
 - **Raw pointer arithmetic**: `.add()`, `.sub()`, `.offset()` — всё unsafe, проверяй bounds перед dereference
 - **Никогда** `transmute` для PE-структур — используй `ptr as *const ImageDosHeader`
+- **`#![allow(unsafe_op_in_unsafe_fn)]`** на уровне крейта (edition 2024) — сознательное решение: вся кодовая база inherently unsafe, wrapping каждой операции в `unsafe {}` добавляет шум без safety-value. **Но** — при добавлении **новых** helper-функций, где unsafe оп не очевиден (например, ты вычислил указатель и разыменовываешь его через 20 строк), всё равно ставь **явный `unsafe { }` блок** и `// SAFETY:` комментарий — это дисциплина, не lint.
+- **`#[unsafe(no_mangle)]`, `#[unsafe(link_section)]`, `#[unsafe(naked)]`** — все атрибуты, помеченные unsafe в edition 2024, оборачивай в `unsafe(...)`. C-bindings `build.rs` эмитит `#[unsafe(no_mangle)]` для всех генерируемых wrapper'ов.
 
 ### FFI / C Bindings (rust-ffi)
-- `#[no_mangle] extern "C"` для всех экспортируемых функций
+- `#[unsafe(no_mangle)] extern "C"` для всех экспортируемых функций (edition 2024 требует `unsafe(...)` обёртку)
 - `#[repr(C)]` для структур в header
 - C wrappers в `c-bindings/src/lib.rs` — автогенерируются через `build.rs`
 - При изменении сигнатур в lib.rs — **всегда** проверяй что `c-bindings/build.rs` корректно парсит и `syscalls.h` обновился

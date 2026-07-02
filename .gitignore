@@ -36,6 +36,7 @@ disasm_syscalls.txt
 # Backup files
 *.bak
 *.wow64
+*.bloat_baseline
 
 # Temp files
 nul
