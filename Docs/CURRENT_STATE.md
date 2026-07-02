@@ -1,6 +1,24 @@
 # CURRENT_STATE.md -- syscalls-rust
 
-## Версия: 0.1.0
+## Версия: 0.2.0
+
+## Toolchain
+
+| | Value |
+|---|---|
+| Rust edition | **2024** |
+| MSRV | **1.96** |
+| Nightly required? | **Нет** -- всё на стабильном компиляторе |
+| `#![no_std]` | Да, runtime-зависимостей ноль |
+
+## Статус проекта
+
+**Активный.** Primary крейт NT-syscall'ов для всех Rust-проектов в
+`D:/GitHub/Rust_Projects/`. Один downstream consumer (`useful-lib`) был
+временно переведён на «преемник» (RSC/SysCalls), затем откачен обратно.
+SysCalls-репо удалён локально (2026-07-02); git-история сохранена на
+github.com/Platon7788/SysCalls.
+
 
 ## Что реализовано
 
@@ -104,3 +122,20 @@
 ## Известные проблемы
 
 - Нет CI/CD
+
+## Downstream consumers (path-dep)
+
+Проверять при изменении public API:
+
+| Проект | Крейт | Как связано |
+|---|---|---|
+| IMGUI_NXT | engine, engine-loading | `path = "../syscalls-rust"` (workspace dep) |
+| IMGUI_SPF | engine | `path = "../syscalls-rust"` (workspace dep) |
+| NX_DRV-MOD | engine | `path = "../syscalls-rust"` |
+| PE-Protect | stub | `default-features = false`, `path = "../syscalls-rust"` |
+| Vex0r/Client | introspect, usermode_debugger | абсолютный путь `D:/GitHub/Rust_Projects/syscalls-rust` |
+| Auth-Workspace | client-sdk-windows | `path = "../../../syscalls-rust"` |
+| useful-lib | proc_enum, drv_enum | `path = "../syscalls-rust"` (workspace dep) |
+
+Верификация проводится через `cargo build -p <crate> --release` в
+соответствующем workspace.

@@ -1,7 +1,7 @@
 # Модуль: c-bindings/
 
 ## Путь: `c-bindings/`
-## Крейт: `syscalls-c` v0.1.0
+## Крейт: `syscalls-c` v0.1.0 (edition 2024)
 
 ## Описание
 
@@ -49,13 +49,20 @@ cargo build --release
 ## src/lib.rs
 
 ```rust
+#![allow(non_snake_case, clippy::missing_safety_doc, clippy::too_many_arguments)]
+// Edition 2024: генерируемые wrappers пробрасывают unsafe fn без явных unsafe { }
+#![allow(unsafe_op_in_unsafe_fn)]
+
 pub use syscalls::*;
 include!(concat!(env!("OUT_DIR"), "/c_wrappers.rs"));
 ```
 
 Re-экспорт всех типов из основного крейта + включение сгенерированных обёрток.
 
-## Примеры (26 файлов)
+**Edition 2024**: build.rs эмитит `#[unsafe(no_mangle)]` (не старый `#[no_mangle]`)
+для всех ~519 C wrappers -- это обязательная edition-2024 форма unsafe-атрибута.
+
+## Примеры (27 файлов)
 
 | Файл | Описание |
 |------|----------|
@@ -85,6 +92,7 @@ Re-экспорт всех типов из основного крейта + в�
 | test_quick.c | Быстрый тест |
 | test_systematic.c | Систематический тест |
 | dump_hashes.c | Дамп хешей функций |
+| wow64_inspect.c | WoW64 gate/env inspection (2026-03) |
 
 ## Артефакты (lib/)
 

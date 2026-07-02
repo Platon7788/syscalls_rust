@@ -3,9 +3,12 @@
 ## Rust (основной крейт)
 
 ### Общие правила
+- **Edition 2024**, MSRV `1.96`, stable toolchain
 - `#![no_std]` -- без стандартной библиотеки
 - `#![allow(non_snake_case, non_camel_case_types)]` -- Windows типы сохраняют оригинальные имена
 - `#![allow(clippy::too_many_arguments)]` -- syscall'ы имеют до 17 параметров
+- `#![allow(unsafe_op_in_unsafe_fn)]` -- сознательное решение (ADR-13): вся кодовая база inherently unsafe. **Но** новый non-obvious код всё равно оборачивай в `unsafe { }` + `// SAFETY:` -- это дисциплина.
+- `#[unsafe(no_mangle)]`, `#[unsafe(link_section)]`, `#[unsafe(naked)]` -- edition-2024 форма unsafe-атрибутов (обязательна)
 - Комментарии на английском
 
 ### Именование
@@ -19,6 +22,8 @@
 - Все syscall функции -- `pub unsafe fn` или `pub unsafe extern "C" fn`
 - Все вызовы PEB/ASM -- в `unsafe` блоках
 - Причина: прямые syscall'ы не проверяют параметры
+- **Naked-функции**: `#[unsafe(naked)]` + `naked_asm!` -- prologue/epilogue отсутствуют, полная ответственность разработчика за calling convention
+- **`#[unsafe(link_section = ".text")]`** на всех 513 x64 naked-стабах -- явное размещение в .text-секции (стабильность через любой toolchain)
 
 ### Структуры
 - Все `#[repr(C)]` для совместимости с C

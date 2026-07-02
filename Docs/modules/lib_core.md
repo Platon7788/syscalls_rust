@@ -12,8 +12,12 @@
 ```rust
 #![no_std]
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
-#![allow(clippy::too_many_arguments, clippy::missing_safety_doc)]
-#![allow(dead_code, unused_imports)]
+#![allow(unused_parens, dead_code)]
+#![allow(clippy::missing_safety_doc, clippy::too_many_arguments)]
+#![allow(clippy::unnecessary_cast, clippy::missing_transmute_annotations)]
+#![allow(static_mut_refs)]
+// Edition 2024: crate-wide allow (см. ADR-13)
+#![allow(unsafe_op_in_unsafe_fn)]
 ```
 
 ## Секции файла (порядок)
@@ -52,13 +56,21 @@ const SW3_MAX_ENTRIES: usize = 600;      // Макс. записей в табл
 
 Каждая из 513 функций следует одному паттерну:
 
-### x64
+### x64 (naked)
 ```rust
-pub unsafe fn nt_xxx(param1: TYPE1, ...) -> NTSTATUS {
-    let hash: u32 = PRECOMPUTED_HASH;
-    let number = sw3_get_syscall_number(hash);
-    let addr = sw3_get_random_syscall_address(hash);
-    // inline ASM: mov r10, rcx; mov eax, number; jmp addr
+#[cfg(target_arch = "x86_64")]
+#[unsafe(naked)]
+#[unsafe(link_section = ".text")]
+pub unsafe extern "C" fn nt_xxx(param1: TYPE1, ...) -> NTSTATUS {
+    // naked function: prologue/epilogue отсутствуют
+    // inline ASM: save shadow space, call sw3_get_random_syscall_address,
+    //             call sw3_get_syscall_number, mov r10, rcx, jmp r11
+    core::arch::naked_asm!(
+        "mov [rsp + 0x08], rcx",
+        // ...
+        get_addr = sym sw3_get_random_syscall_address,
+        get_num = sym sw3_get_syscall_number,
+    )
 }
 ```
 

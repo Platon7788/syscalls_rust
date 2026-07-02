@@ -4,24 +4,27 @@
 
 ```
 syscalls-rust/
-├── Cargo.toml                    # Основной крейт "syscalls"
+├── Cargo.toml                    # Основной крейт "syscalls" (edition 2024)
 ├── Cargo.lock
 ├── .gitignore                    # Git ignore rules
+├── .gitattributes                # Line-ending normalization (2026-07-02)
+├── .dockerignore
 ├── lib.rs                        # Главная библиотека (~57K строк)
 ├── error.rs                      # NtStatus обёртка
-├── README.md                     # Документация (38KB)
+├── README.md                     # Documentation
 ├── CLAUDE.md                     # Инструкции для AI-ассистента
 ├── examples/
 │   └── test_syscalls.rs          # Rust тестовый пример
 ├── c-bindings/                   # Подкрейт C/C++ биндингов
-│   ├── Cargo.toml                # Крейт "syscalls-c"
+│   ├── Cargo.toml                # Крейт "syscalls-c" (edition 2024)
 │   ├── build.rs                  # Генератор syscalls.h (~3200 строк)
 │   ├── cbindgen.toml             # Конфиг cbindgen (резервный)
 │   ├── src/lib.rs                # Re-export + C wrappers
 │   ├── include/
 │   │   ├── syscalls.h            # Сгенерированный C заголовок
+│   │   ├── wow64_helpers.h       # WoW64 helper macros
 │   │   └── README.md
-│   ├── examples/                 # C примеры (26 файлов)
+│   ├── examples/                 # C примеры (27 файлов)
 │   ├── lib/                      # Собранные артефакты
 │   │   ├── syscalls.dll          # Dynamic library
 │   │   ├── syscalls.lib          # MSVC static lib

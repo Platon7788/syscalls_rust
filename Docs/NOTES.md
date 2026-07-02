@@ -31,3 +31,21 @@
 - [2026-02-07] Git-репозиторий инициализирован, .gitignore создан
 - [2026-02-07] Собранные артефакты (dll, lib, a, exe) исключены через .gitignore
 - [2026-02-07] Rust stable -- не требует nightly
+- [2026-07-02] `.gitattributes` добавлен: LF в repo, native checkout, .bat/.cmd/.ps1 остаются CRLF -- убирает шум CRLF-warning'ов
+
+## Edition 2024 миграция (2026-07-02)
+- [2026-07-02] Оба крейта переведены на edition 2024, MSRV `1.96`. Всё собирается на stable.
+- [2026-07-02] Основной риск был -- 83 warning'а от `unsafe_op_in_unsafe_fn` (новый default lint в edition 2024). Решено crate-level `#![allow(...)]` -- см. ADR-13.
+- [2026-07-02] `#[unsafe(no_mangle)]` заменил `#[no_mangle]` в 519 генерируемых C wrappers. Изменение в `c-bindings/build.rs` codegen.
+- [2026-07-02] `#[unsafe(naked)]`, `#[unsafe(link_section)]` уже использовались с 2026-03. С edition 2024 стали "родными" (без warning'ов).
+- [2026-07-02] Downstream verify: IMGUI_NXT, IMGUI_SPF, Auth-Workspace/client-sdk-windows -- собираются чисто. NX_DRV-MOD, PE-Protect, Vex0r -- pre-existing dear-imgui-sys конфликты, к нашим изменениям не относится.
+
+## Экосистема (2026-07-02)
+- [2026-07-02] `useful-lib` возвращён на syscalls-rust (был кратко на RSC/SysCalls). Единственная нетривиальность миграции -- snake_case vs PascalCase имён (rsc-runtime использовал `NtClose`, syscalls-rust -- `nt_close`). Решено через алиасы `use syscalls::{nt_close as NtClose, ...}` в `ntsys.rs` модулях -- call-sites в `core.rs` не тронуты.
+- [2026-07-02] Другие потребители (IMGUI_NXT, IMGUI_SPF, NX_DRV-MOD, PE-Protect, Vex0r, Auth-Workspace) никогда с syscalls-rust не переезжали.
+- [2026-07-02] Сиблинг-репо SysCalls (RSC) удалён локально. git-история на github.com/Platon7788/SysCalls.
+
+## Documentation debt закрыт (2026-07-02)
+- [2026-07-02] README.md актуализирован: убран LEGACY-баннер, поправлен toolchain requirement (stable вместо nightly), включена WoW64=True в конфиг.
+- [2026-07-02] CLAUDE.md обновлён: снят LEGACY, добавлены edition-2024 conventions, обновлён FFI section (`#[unsafe(no_mangle)]`).
+- [2026-07-02] Все файлы в Docs/ приведены в соответствие: PROGRESS, CHANGELOG (v0.2.0), CURRENT_STATE, TODO, DECISIONS (ADR-12/13/14), NOTES (эта запись).
