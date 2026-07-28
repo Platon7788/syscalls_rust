@@ -2,6 +2,52 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-28
+
+### Добавлено
+- **Cargo workspace** в корне: `syscalls` + `syscalls-c` + новый `syscalls-standalone`.
+  Общий `target/`, общий `Cargo.lock`, `cargo build --workspace` собирает всё сразу
+  (см. `DECISIONS.md`, ADR-15).
+- **`syscalls-standalone` крейт** -- генератор self-contained drop-in bundle для
+  MSVC C/C++ проектов (target consumer: xhook). Emits `syscalls.h` + `syscalls.c` +
+  `syscallsstubs.x64.asm` + `syscallsstubs.x86.c` + `syscalls.props` + `README.md`.
+  `X`-префикс на всех symbol'ах, CRT-free, ничего не линкует.
+  Запуск: `cargo run -p syscalls-standalone -- --out <path>`.
+- **Return-Address Spoofing (RAS)** на x64 в generated stubs -- kernel-side
+  stack walk видит caller = ntdll, не calling module. Всегда on, per-stub
+  argument-shift (mov r10, [rsp+src]; mov [rsp+dst], r10) компенсирует
+  `sub rsp, 8` для gadget-слота (см. `DECISIONS.md`, ADR-16).
+- **Атомарная инициализация SW3_SYSCALL_LIST** в `lib.rs` и в generated `syscalls.c`:
+  `AtomicU32` count + `AtomicBool` init-gate + sentinel `X_COUNT_FAILED (-1)`.
+  Устраняет formally-UB гонку и deadlock спинящихся losers при init-failure.
+
+### Изменено
+- **Deps** (c-bindings): `regex 1.12.2 → 1.13.1`, `memchr 2.7.6 → 2.8.3`,
+  `regex-automata 0.4.13 → 0.4.16`, `regex-syntax 0.8.8 → 0.8.11`.
+- **MSRV**: `rust-version = "1.97"` (edition 2024 + `sort_unstable_by_key` на слайсе).
+- **Bubble sort → `sort_unstable_by_key`** в `sw3_populate_syscall_list`
+  (`lib.rs`) -- `no_std`-совместимо, one-liner.
+- **`#![no_std]` → `#![cfg_attr(not(test), no_std)]`** в `lib.rs` -- `cargo test`
+  теперь работает, все 3 unit-теста в `error::tests` проходят.
+- `[profile.release]` из `c-bindings/Cargo.toml` удалён -- наследуется из workspace root.
+
+### Удалено
+- **`output-wow64/`** -- стейл снапшот старой сборки (edition 2021, ~61 493 строк
+  устаревшего `lib.rs`, без C-bindings, без ссылок ниоткуда).
+- **18 `core::mem::transmute::<_, u32>(routine)`** в x86/WoW64-стабах заменены на
+  типизированные касты (`routine as u32` для `PVOID`, `.map_or(0u32, |f| f as usize as u32)`
+  для `Option<fn>`). `#![allow(clippy::missing_transmute_annotations)]` снят.
+- **Duplicate STATUS_\* constants** в `error.rs` (22 переопределения `NtStatus`,
+  заслонённые i32-версиями из lib.rs через glob-shadowing).
+
+### Исправлено
+- XML-комментарий с `--` в `syscalls.props` -- MSBuild MSB4024 при первом же импорте.
+- `X_c_void` мусор-typedef в generated header (дублировал `void` alias).
+- MSBuild передавал C-компиляторные флаги (`/permissive-`, `/Zc:*`, `/utf-8`)
+  в `ml64.exe` при добавлении `.asm` через `target_sources()` -- MASM
+  игнорировал их и **не создавал .obj**. Исправлено изоляцией стабов в
+  OBJECT library в `syscalls.cmake` (см. интеграцию с xhook).
+
 ## [0.2.0] - 2026-07-02
 
 ### Добавлено

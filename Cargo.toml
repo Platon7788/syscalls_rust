@@ -1,8 +1,11 @@
+[workspace]
+members = ["c-bindings", "syscalls-standalone"]
+
 [package]
 name = "syscalls"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.96"
+rust-version = "1.97"
 description = "SysWhispers3 direct syscall library for Windows"
 license = "MIT"
 readme = "README.md"

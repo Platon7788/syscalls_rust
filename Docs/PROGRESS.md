@@ -1,5 +1,42 @@
 # Журнал прогресса syscalls-rust
 
+## 2026-07-28 (v0.3.0: standalone bundle + workspace + RAS + quality audit)
+
+- **Cargo workspace** в корне (`syscalls`, `syscalls-c`, `syscalls-standalone`).
+  Единый target/ + Cargo.lock. Удалён duplicated `[profile.release]` из c-bindings.
+- **Новый крейт `syscalls-standalone`**: генератор self-contained C/H/MASM bundle
+  с `X`-префиксом для drop-in в MSVC-проекты. Consumer: xhook. Файлы:
+  `syscalls-standalone/src/{parse,emit_h,emit_c,emit_asm_x64,emit_stubs_x86,emit_props}.rs`.
+- **Return-Address Spoofing (RAS) на x64** в generated stubs -- kernel-side stack walk
+  показывает caller = ntdll. Per-stub argument-shift компенсирует `sub rsp, 8`.
+  Всегда on, без опций.
+- **Атомарная инициализация** SW3_SYSCALL_LIST и в lib.rs (Rust runtime), и в
+  emitted syscalls.c: `AtomicU32` count + CAS gate + sentinel `-1` для failure.
+  Losers больше не спинятся вечно при неудачной инициализации.
+- **Аудит + фиксы**:
+  - `regex 1.12.2 → 1.13.1`, `memchr 2.7.6 → 2.8.3` (+ regex-{automata,syntax})
+  - `rust-version = "1.97"` (MSRV минимум, не патч)
+  - `#![cfg_attr(not(test), no_std)]` → `cargo test` работает (3/3 в error::tests)
+  - Bubble sort → `sort_unstable_by_key` в populate
+  - 18 `transmute::<_, u32>` → типизированные касты; allow снят
+  - 22 duplicate `STATUS_*` в error.rs удалены (glob-shadowing артефакт)
+  - Стейл `output-wow64/` (61K строк) удалён
+- **Интеграция с xhook (`D:/GitHub/VsProjects/xhook`)**:
+  - Bundle сгенерирован в `xhook/syscalls/`
+  - `syscalls.cmake` с функцией `xsyscalls_attach(target)` -- один include в
+    CMakeLists.txt подключает всё
+  - Верифицировано: `cmake --build --target xhook` для x64 и Win32 -- 0 errors,
+    0 warnings from our code. `xhook.dll` собран для обеих архитектур
+  - Critical fix: MSBuild forward'ил C compile-options в `ml64.exe` при добавлении
+    .asm через `target_sources` -- MASM игнорировал их и не создавал .obj.
+    Решено изоляцией стабов в OBJECT library
+- **msbuild-верификация `.props`** (для не-CMake consumers): все 4 конфига
+  (Debug/Release × Win32/x64) собираются, exe запускаются, реальные syscalls
+  отдают `STATUS_SUCCESS`. Toolset на VS 2026 preview = `v145` (не `v180`).
+- **Docs update**: CHANGELOG v0.3.0, DECISIONS ADR-15/16, NOTES секция
+  «Standalone C/H/MASM bundle (2026-07-28)» и «Отложенные улучшения bundle»
+  (signature diversification, x86 RAS, HalosGate).
+
 ## 2026-07-02 (edition 2024 + un-archive + downstream re-consolidation)
 
 Kоммиты: `3c320d7`, `db3c6fd`, `e17b05b`, `73b790a`.

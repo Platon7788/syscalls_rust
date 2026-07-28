@@ -325,30 +325,8 @@ impl NtStatusExt for i32 {
     }
 }
 
-// Common status constants
-pub const STATUS_SUCCESS: NtStatus = NtStatus(0x00000000);
-pub const STATUS_WAIT_0: NtStatus = NtStatus(0x00000000);
-pub const STATUS_WAIT_1: NtStatus = NtStatus(0x00000001);
-pub const STATUS_TIMEOUT: NtStatus = NtStatus(0x00000102);
-pub const STATUS_PENDING: NtStatus = NtStatus(0x00000103);
-pub const STATUS_BUFFER_OVERFLOW: NtStatus = NtStatus(0x80000005u32 as i32);
-pub const STATUS_NO_MORE_FILES: NtStatus = NtStatus(0x80000006u32 as i32);
-pub const STATUS_UNSUCCESSFUL: NtStatus = NtStatus(0xC0000001u32 as i32);
-pub const STATUS_NOT_IMPLEMENTED: NtStatus = NtStatus(0xC0000002u32 as i32);
-pub const STATUS_INFO_LENGTH_MISMATCH: NtStatus = NtStatus(0xC0000004u32 as i32);
-pub const STATUS_ACCESS_VIOLATION: NtStatus = NtStatus(0xC0000005u32 as i32);
-pub const STATUS_INVALID_HANDLE: NtStatus = NtStatus(0xC0000008u32 as i32);
-pub const STATUS_INVALID_PARAMETER: NtStatus = NtStatus(0xC000000Du32 as i32);
-pub const STATUS_NO_SUCH_FILE: NtStatus = NtStatus(0xC000000Fu32 as i32);
-pub const STATUS_NO_MEMORY: NtStatus = NtStatus(0xC0000017u32 as i32);
-pub const STATUS_ACCESS_DENIED: NtStatus = NtStatus(0xC0000022u32 as i32);
-pub const STATUS_BUFFER_TOO_SMALL: NtStatus = NtStatus(0xC0000023u32 as i32);
-pub const STATUS_OBJECT_NAME_NOT_FOUND: NtStatus = NtStatus(0xC0000034u32 as i32);
-pub const STATUS_OBJECT_PATH_NOT_FOUND: NtStatus = NtStatus(0xC000003Au32 as i32);
-pub const STATUS_SHARING_VIOLATION: NtStatus = NtStatus(0xC0000043u32 as i32);
-pub const STATUS_PRIVILEGE_NOT_HELD: NtStatus = NtStatus(0xC0000061u32 as i32);
-pub const STATUS_INSUFFICIENT_RESOURCES: NtStatus = NtStatus(0xC000009Au32 as i32);
-pub const STATUS_NOT_FOUND: NtStatus = NtStatus(0xC0000225u32 as i32);
+// NOTE: raw i32 STATUS_* constants live in lib.rs (the NTSTATUS surface).
+// Callers wanting the NtStatus wrapper build one via NtStatus(super::STATUS_*).
 
 #[cfg(test)]
 mod tests {

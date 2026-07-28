@@ -49,3 +49,20 @@
 - [2026-07-02] README.md актуализирован: убран LEGACY-баннер, поправлен toolchain requirement (stable вместо nightly), включена WoW64=True в конфиг.
 - [2026-07-02] CLAUDE.md обновлён: снят LEGACY, добавлены edition-2024 conventions, обновлён FFI section (`#[unsafe(no_mangle)]`).
 - [2026-07-02] Все файлы в Docs/ приведены в соответствие: PROGRESS, CHANGELOG (v0.2.0), CURRENT_STATE, TODO, DECISIONS (ADR-12/13/14), NOTES (эта запись).
+
+## Standalone C/H/MASM bundle (2026-07-28)
+- [2026-07-28] Новый крейт `syscalls-standalone` в workspace -- генерит self-contained drop-in для MSVC-проектов (xhook и др.). Импортирует lib.rs, эмитит `syscalls.h`+`syscalls.c`+`syscallsstubs.x64.asm`+`syscallsstubs.x86.c`+`syscalls.props`+README.
+- [2026-07-28] `X`-префикс на всех symbol'ах (`XNtAllocateVirtualMemory`, `X_HANDLE`, `X_NTSTATUS`) -- не конфликтует с `<windows.h>`.
+- [2026-07-28] CRT-free: MSVC intrinsics inlined (`_InterlockedCompareExchange`, `__readgsqword`), BSS-only state, ноль CRT-вызовов. Проверено `cl /Zs` без CRT-подключений.
+- [2026-07-28] `.props` верифицирован msbuild-прогоном по 4 конфигам (Debug/Release × Win32/x64): x86-стабы компилятся только на Win32, MASM ассемблируется только на x64, реальные syscalls отдают `STATUS_SUCCESS`.
+- [2026-07-28] **RAS (Return-Address Spoofing) активирован на x64**: перед `jmp r11` стабы кладут `X_NtdllRetGadget` в `[rsp]`, реальный user_ret_addr сохраняется под ним. Double-ret через ntdll `ret` gadget возвращает управление user-коду. Kernel-side stack walk (ETW-Ti, PsSetCreateProcessNotifyRoutine) видит caller = ntdll, не xhook.dll.
+- [2026-07-28] Критичный момент RAS: `sub rsp, 8` для gadget-слота сдвигает kernel-view args 5..N на 8 байт. Компенсируется per-stub копированием (генератор эмитит `mov r10, [rsp+src]; mov [rsp+dst], r10` для N-4 слотов). Использование R10 как scratch безопасно (перезаписывается на `mov r10, rcx` для NT ABI перед jmp).
+- [2026-07-28] Init: sentinel `X_COUNT_FAILED (-1)` в Count -- fix для deadlock'а спинящихся losers при init-failure winner'а. Аналогичный фикс сделан и в Rust runtime lib.rs.
+
+## Отложенные улучшения bundle (не в scope этой сессии)
+- **Signature diversification** (~2ч): рандомизация NOP-sled'ов и перестановка `push`/`mov` порядка в стабах. Сейчас все 513 стабов -- один скелет с разными hash-константами, легко подписывается AV. Emit-time инъекция junk-instructions решает.
+- **x86 RAS** (~4ч): на WoW64 gate уже проксирует через 64-битный gate (kernel-side видит гейт как caller), но native x86 caller виден. Сложнее из-за stdcall stack semantics.
+- **HalosGate fallback** (~1ч): если ВСЕ `syscall;ret` gadgets в ntdll замочены -- падаем. Fallback на ntdll wrapper с walk±512 для восстановления syscall number.
+- **CI regression tests** (~3ч): GH Actions -- регенерация bundle + compile+run smoke test при каждом изменении lib.rs.
+
+Приоритет расписан на случай столкновения с конкретным EDR. Сейчас baseline достаточен для xhook как утилиты; при переходе в attack-tool режим -- дорисовать по приоритету.

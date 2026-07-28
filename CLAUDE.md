@@ -16,7 +16,7 @@
 **syscalls-rust** v0.1.0 -- библиотека прямых Windows NT syscall'ов на Rust (SysWhispers3), с полными C/C++ биндингами.
 
 - `#![no_std]` -- нулевые runtime-зависимости
-- **Rust edition 2024**, MSRV 1.96
+- **Rust edition 2024**, MSRV 1.97
 - 513 NT syscall функций с хеш-обфускацией имён
 - Прямые syscall инструкции (x64: `syscall`, x86: `sysenter`/WoW64 gate) -- без вызова ntdll
 - Полная WoW64 поддержка (x86 на 64-bit Windows) с dummy return address

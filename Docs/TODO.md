@@ -14,11 +14,15 @@
 - [ ] Разделить lib.rs на модули (types.rs, constants.rs, runtime.rs, syscalls/) -- для удобства навигации. **Blocker**: SW3-генератор не поддерживает multi-file вывод; либо форкать генератор, либо переехать на другой источник (phnt/pdb).
 
 ### Средний приоритет
-- [ ] Добавить thread-safe инициализацию (`std::sync::atomic` fence или `#[used] static Once`) для `SW3_SYSCALL_LIST` -- сейчас гонка идемпотентна, но formally UB
+- [x] Thread-safe инициализация SW3_SYSCALL_LIST -- `AtomicU32` count + CAS init-gate (2026-07-28)
 - [x] Включить WoW64 поддержку -- реализовано для всех 513 функций (2026-03-14)
 - [x] `#[unsafe(link_section = ".text")]` на naked-стабах (2026-07-02)
 - [ ] Добавить feature gate для категорий функций (memory, process, thread, ...) -- уменьшит размер если не все нужны
-- [ ] Cargo workspace для основного крейта и c-bindings -- **обсуждается**: сейчас корневой крейт и `c-bindings/` живут отдельно с path-dep, это работает; workspace нужен только если хотим единый target/ и общий Cargo.lock
+- [x] Cargo workspace для основного крейта и c-bindings -- сделан 2026-07-28
+  вместе с новым `syscalls-standalone` крейтом (ADR-15)
+- [ ] **Bundle stealth**: signature diversification, x86 RAS, HalosGate fallback --
+  осознанно отложено, триггер = первое столкновение с реальным EDR (см.
+  `NOTES.md`, раздел «Отложенные улучшения bundle»)
 
 ### Низкий приоритет
 - [ ] CI/CD (GitHub Actions) для автосборки на MSVC и MinGW + smoke-test downstream consumers

@@ -1,23 +1,31 @@
 # CURRENT_STATE.md -- syscalls-rust
 
-## Версия: 0.2.0
+## Версия: 0.3.0
 
 ## Toolchain
 
 | | Value |
 |---|---|
 | Rust edition | **2024** |
-| MSRV | **1.96** |
+| MSRV | **1.97** |
 | Nightly required? | **Нет** -- всё на стабильном компиляторе |
-| `#![no_std]` | Да, runtime-зависимостей ноль |
+| `#![no_std]` | Да (под `cfg_attr(not(test), ...)` -- тесты работают) |
+| Cargo workspace | Да -- 3 крейта в корне |
+
+## Структура workspace
+
+| Крейт | Тип | Роль |
+|---|---|---|
+| `syscalls` | rlib | Основная библиотека для Rust-consumer'ов (edition 2024, no_std) |
+| `syscalls-c` (`c-bindings/`) | staticlib + cdylib | Rust re-export + generated `syscalls.h` для C-consumer'ов |
+| `syscalls-standalone` | bin | Генератор self-contained C/H/MASM drop-in bundle с `X`-префиксом для MSVC-проектов без Rust-зависимости (target: xhook) |
 
 ## Статус проекта
 
 **Активный.** Primary крейт NT-syscall'ов для всех Rust-проектов в
-`D:/GitHub/Rust_Projects/`. Один downstream consumer (`useful-lib`) был
-временно переведён на «преемник» (RSC/SysCalls), затем откачен обратно.
-SysCalls-репо удалён локально (2026-07-02); git-история сохранена на
-github.com/Platon7788/SysCalls.
+`D:/GitHub/Rust_Projects/`. С 2026-07-28 также обслуживает C/C++ проекты
+через standalone bundle -- в `xhook` (`D:/GitHub/VsProjects/xhook`)
+интегрирован через `syscalls.cmake` + `xsyscalls_attach(target)`.
 
 
 ## Что реализовано
@@ -115,13 +123,15 @@ github.com/Platon7788/SysCalls.
 ## Известные ограничения
 
 1. **Windows only** -- syscall'ы специфичны для Windows NT
-2. **Не thread-safe при первом вызове** -- `static mut` таблица, но идемпотентна
-3. **Номера syscall'ов меняются между версиями Windows** -- runtime-определение решает это
-4. **lib.rs ~57K строк** -- сложно читать/редактировать целиком
+2. **Номера syscall'ов меняются между версиями Windows** -- runtime-определение решает это
+3. **lib.rs ~58K строк** -- сложно читать/редактировать целиком
+4. **Bundle stealth уровня baseline** -- есть RAS на x64, но нет signature
+   diversification и HalosGate fallback (см. `NOTES.md`, раздел
+   «Отложенные улучшения bundle» для приоритетов)
 
 ## Известные проблемы
 
-- Нет CI/CD
+- Нет CI/CD (см. `NOTES.md` -- CI regression tests для generator в отложенных)
 
 ## Downstream consumers (path-dep)
 

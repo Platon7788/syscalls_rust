@@ -27,7 +27,7 @@
 //! }
 //! ```
 
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
 #![allow(non_upper_case_globals)]
@@ -36,7 +36,6 @@
 #![allow(clippy::missing_safety_doc)]
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::unnecessary_cast)]
-#![allow(clippy::missing_transmute_annotations)]
 #![allow(static_mut_refs)]
 // Edition 2024 turns `unsafe_op_in_unsafe_fn` into a warn-by-default lint.
 // This crate is inherently unsafe end-to-end (inline asm, raw ptr walks over
@@ -802,20 +801,38 @@ struct SW3SyscallEntry {
 }
 
 /// Global syscall list
+///
+/// `count` is the atomic publication flag: writers fill `entries[..]` first, then
+/// store `count` with `Release`; readers load `count` with `Acquire` before
+/// touching any entry. `init_started` gates racing callers into a single
+/// initializer — losers spin on `count` until the winner publishes.
 #[repr(C)]
 struct SW3SyscallList {
-    count: u32,
+    count: core::sync::atomic::AtomicU32,
+    init_started: core::sync::atomic::AtomicBool,
     entries: [SW3SyscallEntry; SW3_MAX_ENTRIES],
 }
 
-static mut SW3_SYSCALL_LIST: SW3SyscallList = SW3SyscallList {
-    count: 0,
+static SW3_SYSCALL_LIST: SW3SyscallList = SW3SyscallList {
+    count: core::sync::atomic::AtomicU32::new(0),
+    init_started: core::sync::atomic::AtomicBool::new(false),
     entries: [SW3SyscallEntry {
         hash: 0,
         address: 0,
         syscall_address: 0,
     }; SW3_MAX_ENTRIES],
 };
+
+/// Mutable access to the syscall table. Callers must uphold the publication
+/// protocol described on [`SW3SyscallList`]. Only [`sw3_populate_syscall_list`]
+/// mutates `entries`, and it does so before the `Release` store to `count`.
+#[inline(always)]
+#[allow(clippy::mut_from_ref)]
+unsafe fn sw3_entries_mut() -> &'static mut [SW3SyscallEntry; SW3_MAX_ENTRIES] {
+    // SAFETY: exclusive mutation is serialized by the `init_started` CAS gate;
+    // readers only touch entries after loading `count` with `Acquire`.
+    &mut *(&raw const SW3_SYSCALL_LIST.entries as *mut [SW3SyscallEntry; SW3_MAX_ENTRIES])
+}
 
 // =============================================================================
 // PEB Structures for NTDLL Resolution
@@ -1032,18 +1049,43 @@ unsafe fn sw3_find_syscall_address(nt_api_address: PVOID) -> PVOID {
 /// Populate syscall list from ntdll exports
 /// This parses the PEB to find ntdll and extracts all Zw* functions
 unsafe fn sw3_populate_syscall_list() -> bool {
-    // Return early if already populated
-    if SW3_SYSCALL_LIST.count > 0 {
+    use core::sync::atomic::Ordering;
+
+    // Fast path: already populated. Acquire pairs with the Release store below,
+    // so anyone that observes count > 0 sees fully-initialized entries.
+    if SW3_SYSCALL_LIST.count.load(Ordering::Acquire) > 0 {
         return true;
     }
 
+    // Serialize concurrent initializers: winner runs the walk, losers spin
+    // until the winner publishes `count` with Release.
+    if SW3_SYSCALL_LIST
+        .init_started
+        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_err()
+    {
+        while SW3_SYSCALL_LIST.count.load(Ordering::Acquire) == 0 {
+            core::hint::spin_loop();
+        }
+        return true;
+    }
+
+    // Failure path: return the init gate so a later caller can retry.
+    let release_gate_on_failure = || {
+        SW3_SYSCALL_LIST
+            .init_started
+            .store(false, Ordering::Release);
+    };
+
     let peb = sw3_get_peb();
     if peb.is_null() {
+        release_gate_on_failure();
         return false;
     }
 
     let ldr = (*peb).ldr;
     if ldr.is_null() {
+        release_gate_on_failure();
         return false;
     }
 
@@ -1107,6 +1149,7 @@ unsafe fn sw3_populate_syscall_list() -> bool {
         let ordinals = (dll_base as *const u8).add((*export_dir).address_of_name_ordinals as usize)
             as *const u16;
 
+        let entries = sw3_entries_mut();
         let mut count = 0u32;
 
         // Iterate backwards through names (matches C version)
@@ -1121,13 +1164,13 @@ unsafe fn sw3_populate_syscall_list() -> bool {
                 let ordinal = *ordinals.add(i as usize);
                 let func_rva = *functions.add(ordinal as usize);
 
-                SW3_SYSCALL_LIST.entries[count as usize].hash = sw3_hash_syscall(func_name);
-                SW3_SYSCALL_LIST.entries[count as usize].address = func_rva;
+                let slot = &mut entries[count as usize];
+                slot.hash = sw3_hash_syscall(func_name);
+                slot.address = func_rva;
 
                 // For jumper modes, find the syscall instruction address
                 let func_addr = (dll_base as *const u8).add(func_rva as usize) as PVOID;
-                SW3_SYSCALL_LIST.entries[count as usize].syscall_address =
-                    sw3_find_syscall_address(func_addr) as usize;
+                slot.syscall_address = sw3_find_syscall_address(func_addr) as usize;
 
                 count += 1;
                 if count as usize >= SW3_MAX_ENTRIES {
@@ -1136,20 +1179,17 @@ unsafe fn sw3_populate_syscall_list() -> bool {
             }
         }
 
-        SW3_SYSCALL_LIST.count = count;
+        // Sort by address so the hash-index correspondence matches ntdll's
+        // export order (this is what SysWhispers3 hard-codes).
+        entries[..count as usize].sort_unstable_by_key(|e| e.address);
 
-        // Sort by address (bubble sort - matches C version)
-        for ii in 0..(count as usize).saturating_sub(1) {
-            for j in 0..(count as usize) - ii - 1 {
-                if SW3_SYSCALL_LIST.entries[j].address > SW3_SYSCALL_LIST.entries[j + 1].address {
-                    SW3_SYSCALL_LIST.entries.swap(j, j + 1);
-                }
-            }
-        }
-
+        // Release: pairs with the Acquire loads in readers. Every entry
+        // written above becomes visible before any observer sees count > 0.
+        SW3_SYSCALL_LIST.count.store(count, Ordering::Release);
         return true;
     }
 
+    release_gate_on_failure();
     false
 }
 
@@ -1161,7 +1201,10 @@ pub unsafe fn sw3_get_syscall_number(function_hash: u32) -> u32 {
         return 0xFFFFFFFF;
     }
 
-    for i in 0..SW3_SYSCALL_LIST.count as usize {
+    let count = SW3_SYSCALL_LIST
+        .count
+        .load(core::sync::atomic::Ordering::Acquire) as usize;
+    for i in 0..count {
         if SW3_SYSCALL_LIST.entries[i].hash == function_hash {
             return i as u32;
         }
@@ -1174,13 +1217,18 @@ pub unsafe fn sw3_get_syscall_number(function_hash: u32) -> u32 {
 #[inline(never)]
 pub unsafe fn sw3_debug_get_count() -> u32 {
     sw3_populate_syscall_list();
-    SW3_SYSCALL_LIST.count
+    SW3_SYSCALL_LIST
+        .count
+        .load(core::sync::atomic::Ordering::Acquire)
 }
 
 /// Debug function to get hash at index
 #[inline(never)]
 pub unsafe fn sw3_debug_get_hash(index: usize) -> u32 {
-    if index < SW3_SYSCALL_LIST.count as usize {
+    let count = SW3_SYSCALL_LIST
+        .count
+        .load(core::sync::atomic::Ordering::Acquire) as usize;
+    if index < count {
         SW3_SYSCALL_LIST.entries[index].hash
     } else {
         0
@@ -1190,7 +1238,10 @@ pub unsafe fn sw3_debug_get_hash(index: usize) -> u32 {
 /// Debug function to get syscall address at index
 #[inline(never)]
 pub unsafe fn sw3_debug_get_syscall_addr(index: usize) -> PVOID {
-    if index < SW3_SYSCALL_LIST.count as usize {
+    let count = SW3_SYSCALL_LIST
+        .count
+        .load(core::sync::atomic::Ordering::Acquire) as usize;
+    if index < count {
         SW3_SYSCALL_LIST.entries[index].syscall_address as PVOID
     } else {
         core::ptr::null_mut()
@@ -1204,7 +1255,10 @@ pub unsafe fn sw3_get_syscall_address(function_hash: u32) -> PVOID {
         return core::ptr::null_mut();
     }
 
-    for i in 0..SW3_SYSCALL_LIST.count as usize {
+    let count = SW3_SYSCALL_LIST
+        .count
+        .load(core::sync::atomic::Ordering::Acquire) as usize;
+    for i in 0..count {
         if SW3_SYSCALL_LIST.entries[i].hash == function_hash {
             let addr = SW3_SYSCALL_LIST.entries[i].syscall_address;
             if addr != 0 {
@@ -1216,7 +1270,7 @@ pub unsafe fn sw3_get_syscall_address(function_hash: u32) -> PVOID {
     }
 
     // Fallback: find any valid syscall address
-    for i in 0..SW3_SYSCALL_LIST.count as usize {
+    for i in 0..count {
         let addr = SW3_SYSCALL_LIST.entries[i].syscall_address;
         if addr != 0 {
             return addr as PVOID;
@@ -1234,16 +1288,24 @@ pub unsafe fn sw3_get_random_syscall_address(function_hash: u32) -> PVOID {
         return core::ptr::null_mut();
     }
 
+    let count = SW3_SYSCALL_LIST
+        .count
+        .load(core::sync::atomic::Ordering::Acquire);
+    if count == 0 {
+        return core::ptr::null_mut();
+    }
+    let count_usize = count as usize;
+
     // Use function hash as seed for deterministic but varied selection
-    let mut index = (function_hash as usize) % (SW3_SYSCALL_LIST.count as usize);
+    let mut index = (function_hash as usize) % count_usize;
 
     // Make sure we don't return our own syscall address and that it's valid
     let mut attempts = 0;
     while (SW3_SYSCALL_LIST.entries[index].hash == function_hash
         || SW3_SYSCALL_LIST.entries[index].syscall_address == 0)
-        && attempts < SW3_SYSCALL_LIST.count
+        && attempts < count
     {
-        index = (index + 1) % (SW3_SYSCALL_LIST.count as usize);
+        index = (index + 1) % count_usize;
         attempts += 1;
     }
 
@@ -8169,7 +8231,7 @@ pub unsafe fn nt_call_enclave(
             "call {gate}",
             "add esp, 20",
             gate = in(reg) wow64_gate as u32,
-        p0 = in(reg) core::mem::transmute::<_, u32>(routine),
+        p0 = in(reg) routine as u32,
         p1 = in(reg) parameter as u32,
         p2 = in(reg) wait_for_thread as u32,
         p3 = in(reg) return_value as u32,
@@ -8186,7 +8248,7 @@ pub unsafe fn nt_call_enclave(
             "call {addr}",
             "add esp, 16",
             addr = in(reg) syscall_addr as u32,
-        p0 = in(reg) core::mem::transmute::<_, u32>(routine),
+        p0 = in(reg) routine as u32,
         p1 = in(reg) parameter as u32,
         p2 = in(reg) wait_for_thread as u32,
         p3 = in(reg) return_value as u32,
@@ -19235,7 +19297,7 @@ pub unsafe fn nt_device_io_control_file(
     let params: [u32; 10] = [
         file_handle as u32,
         event as u32,
-        core::mem::transmute::<_, u32>(apc_routine),
+        apc_routine.map_or(0u32, |f| f as usize as u32),
         apc_context as u32,
         io_status_block as u32,
         io_control_code as u32,
@@ -22591,7 +22653,7 @@ pub unsafe fn nt_fs_control_file(
     let params: [u32; 10] = [
         file_handle as u32,
         event as u32,
-        core::mem::transmute::<_, u32>(apc_routine),
+        apc_routine.map_or(0u32, |f| f as usize as u32),
         apc_context as u32,
         io_status_block as u32,
         fs_control_code as u32,
@@ -26163,7 +26225,7 @@ pub unsafe fn nt_lock_file(
     let params: [u32; 10] = [
         file_handle as u32,
         event as u32,
-        core::mem::transmute::<_, u32>(apc_routine),
+        apc_routine.map_or(0u32, |f| f as usize as u32),
         apc_context as u32,
         io_status_block as u32,
         byte_offset as u32,
@@ -28026,7 +28088,7 @@ pub unsafe fn nt_notify_change_directory_file(
     let params: [u32; 9] = [
         file_handle as u32,
         event as u32,
-        core::mem::transmute::<_, u32>(apc_routine),
+        apc_routine.map_or(0u32, |f| f as usize as u32),
         apc_context as u32,
         io_status_block as u32,
         buffer as u32,
@@ -28166,7 +28228,7 @@ pub unsafe fn nt_notify_change_directory_file_ex(
     let params: [u32; 10] = [
         file_handle as u32,
         event as u32,
-        core::mem::transmute::<_, u32>(apc_routine),
+        apc_routine.map_or(0u32, |f| f as usize as u32),
         apc_context as u32,
         io_status_block as u32,
         buffer as u32,
@@ -28309,7 +28371,7 @@ pub unsafe fn nt_notify_change_key(
     let params: [u32; 10] = [
         key_handle as u32,
         event as u32,
-        core::mem::transmute::<_, u32>(apc_routine),
+        apc_routine.map_or(0u32, |f| f as usize as u32),
         apc_context as u32,
         io_status_block as u32,
         completion_filter as u32,
@@ -28458,7 +28520,7 @@ pub unsafe fn nt_notify_change_multiple_keys(
         count as u32,
         subordinate_objects as u32,
         event as u32,
-        core::mem::transmute::<_, u32>(apc_routine),
+        apc_routine.map_or(0u32, |f| f as usize as u32),
         apc_context as u32,
         io_status_block as u32,
         completion_filter as u32,
@@ -34747,7 +34809,7 @@ pub unsafe fn nt_query_directory_file(
     let params: [u32; 11] = [
         file_handle as u32,
         event as u32,
-        core::mem::transmute::<_, u32>(apc_routine),
+        apc_routine.map_or(0u32, |f| f as usize as u32),
         apc_context as u32,
         io_status_block as u32,
         file_information as u32,
@@ -34893,7 +34955,7 @@ pub unsafe fn nt_query_directory_file_ex(
     let params: [u32; 10] = [
         file_handle as u32,
         event as u32,
-        core::mem::transmute::<_, u32>(apc_routine),
+        apc_routine.map_or(0u32, |f| f as usize as u32),
         apc_context as u32,
         io_status_block as u32,
         file_information as u32,
@@ -41017,7 +41079,7 @@ pub unsafe fn nt_queue_apc_thread(
     let syscall_addr = sw3_get_random_syscall_address(0xB28D6F34_u32);
     let params: [u32; 5] = [
         thread_handle as u32,
-        core::mem::transmute::<_, u32>(apc_routine),
+        apc_routine.map_or(0u32, |f| f as usize as u32),
         apc_argument1 as u32,
         apc_argument2 as u32,
         apc_argument3 as u32,
@@ -41138,7 +41200,7 @@ pub unsafe fn nt_queue_apc_thread_ex(
     let params: [u32; 6] = [
         thread_handle as u32,
         user_apc_reserve_handle as u32,
-        core::mem::transmute::<_, u32>(apc_routine),
+        apc_routine.map_or(0u32, |f| f as usize as u32),
         apc_argument1 as u32,
         apc_argument2 as u32,
         apc_argument3 as u32,
@@ -41625,7 +41687,7 @@ pub unsafe fn nt_read_file(
     let params: [u32; 9] = [
         file_handle as u32,
         event as u32,
-        core::mem::transmute::<_, u32>(apc_routine),
+        apc_routine.map_or(0u32, |f| f as usize as u32),
         apc_context as u32,
         io_status_block as u32,
         buffer as u32,
@@ -41763,7 +41825,7 @@ pub unsafe fn nt_read_file_scatter(
     let params: [u32; 9] = [
         file_handle as u32,
         event as u32,
-        core::mem::transmute::<_, u32>(apc_routine),
+        apc_routine.map_or(0u32, |f| f as usize as u32),
         apc_context as u32,
         io_status_block as u32,
         segment_array as u32,
@@ -52098,7 +52160,7 @@ pub unsafe fn nt_set_timer(
     let params: [u32; 7] = [
         timer_handle as u32,
         due_time as u32,
-        core::mem::transmute::<_, u32>(timer_apc_routine),
+        timer_apc_routine.map_or(0u32, |f| f as usize as u32),
         timer_context as u32,
         resume_timer as u32,
         period as u32,
@@ -57646,7 +57708,7 @@ pub unsafe fn nt_write_file(
     let params: [u32; 9] = [
         file_handle as u32,
         event as u32,
-        core::mem::transmute::<_, u32>(apc_routine),
+        apc_routine.map_or(0u32, |f| f as usize as u32),
         apc_context as u32,
         io_status_block as u32,
         buffer as u32,
@@ -57784,7 +57846,7 @@ pub unsafe fn nt_write_file_gather(
     let params: [u32; 9] = [
         file_handle as u32,
         event as u32,
-        core::mem::transmute::<_, u32>(apc_routine),
+        apc_routine.map_or(0u32, |f| f as usize as u32),
         apc_context as u32,
         io_status_block as u32,
         segment_array as u32,
