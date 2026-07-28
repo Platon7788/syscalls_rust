@@ -263,6 +263,8 @@ pub const SECTION_EXTEND_SIZE: ACCESS_MASK = 0x0010;
 pub const SECTION_MAP_EXECUTE_EXPLICIT: ACCESS_MASK = 0x0020;
 pub const SECTION_ALL_ACCESS: ACCESS_MASK = 0xF001F;
 
+pub const EVENT_ALL_ACCESS: ACCESS_MASK = 0x001F0003;
+
 // =============================================================================
 // Process Access Rights
 // =============================================================================
@@ -27464,7 +27466,7 @@ pub unsafe fn nt_map_user_physical_pages_scatter(
 pub unsafe extern "C" fn nt_map_view_of_section(
     section_handle: HANDLE,
     process_handle: HANDLE,
-    base_address: PVOID,
+    base_address: *mut PVOID,
     zero_bits: ULONG,
     commit_size: SIZE_T,
     section_offset: *mut LARGE_INTEGER,
@@ -27527,7 +27529,7 @@ pub unsafe extern "C" fn nt_map_view_of_section(
 pub unsafe fn nt_map_view_of_section(
     section_handle: HANDLE,
     process_handle: HANDLE,
-    base_address: PVOID,
+    base_address: *mut PVOID,
     zero_bits: ULONG,
     commit_size: SIZE_T,
     section_offset: *mut LARGE_INTEGER,
