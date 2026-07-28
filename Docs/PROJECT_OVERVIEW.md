@@ -51,9 +51,12 @@
 
 | Файл | Строки | Размер |
 |------|--------|--------|
-| lib.rs | ~57,700 | 1.8 MB |
-| error.rs | 378 | 16 KB |
-| c-bindings/build.rs | ~3,200 | 116 KB |
+| lib.rs | ~58,000 | 1.8 MB |
+| error.rs | 356 | 15 KB |
+| syscalls-standalone/src/ | ~1,500 | ~50 KB |
 | examples/test_syscalls.rs | 171 | 8 KB |
-| C примеры (26 файлов) | ~2,000+ | ~80 KB |
-| **Итого** | **~63,000+** | **~2.0 MB** |
+| **Итого** | **~60,000** | **~1.9 MB** |
+
+Сгенерированный bundle (не в repo, эмитится на лету):
+`syscalls.h` ~98 KB, `syscalls.c` ~13 KB, `syscallsstubs.x64.asm` ~289 KB,
+`syscallsstubs.x86.c` ~663 KB.

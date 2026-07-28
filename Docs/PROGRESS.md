@@ -1,5 +1,20 @@
 # Журнал прогресса syscalls-rust
 
+## 2026-07-28 (cleanup: c-bindings удалён, MinGW-таргеты сняты)
+
+- **`c-bindings/` крейт удалён** -- 550 MB артефактов и ~3200 строк generator
+  build.rs. Роль (staticlib + cdylib + генерация syscalls.h) полностью покрыл
+  `syscalls-standalone`, но с лучшей моделью: consumer'у не нужен Rust
+  toolchain, только запуск генератора один раз. Никакой downstream Rust-крейт
+  на `syscalls-c` path-dep не ссылался (все пользуются основным `syscalls`).
+- **MinGW-таргеты сняты** из `.cargo/config.toml` -- `x86_64-pc-windows-gnu`
+  и `i686-pc-windows-gnu` блоки удалены. MSVC-only.
+- **Docs actualization**: CLAUDE.md (карта файлов, зависимости, FFI-раздел
+  переписан под standalone), CURRENT_STATE (workspace = 2 крейта, платформы
+  без gnu), CHANGELOG (Unreleased breaking-change entry), DECISIONS ADR-17.
+- **`Docs/modules/c_bindings.md`** удалён.
+- Verify: `cargo build --workspace` + `cargo test --workspace` -- зелёные.
+
 ## 2026-07-28 (v0.3.0: standalone bundle + workspace + RAS + quality audit)
 
 - **Cargo workspace** в корне (`syscalls`, `syscalls-c`, `syscalls-standalone`).

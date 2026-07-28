@@ -4,35 +4,36 @@
 
 ```
 syscalls-rust/
-├── Cargo.toml                    # Основной крейт "syscalls" (edition 2024)
+├── Cargo.toml                    # Workspace root + main "syscalls" крейт (edition 2024)
 ├── Cargo.lock
-├── .gitignore                    # Git ignore rules
+├── .cargo/config.toml            # +crt-static для MSVC targets
+├── .gitignore
 ├── .gitattributes                # Line-ending normalization (2026-07-02)
 ├── .dockerignore
-├── lib.rs                        # Главная библиотека (~57K строк)
+├── lib.rs                        # Главная библиотека (~58K строк)
 ├── error.rs                      # NtStatus обёртка
-├── README.md                     # Documentation
+├── README.md
 ├── CLAUDE.md                     # Инструкции для AI-ассистента
 ├── examples/
 │   └── test_syscalls.rs          # Rust тестовый пример
-├── c-bindings/                   # Подкрейт C/C++ биндингов
-│   ├── Cargo.toml                # Крейт "syscalls-c" (edition 2024)
-│   ├── build.rs                  # Генератор syscalls.h (~3200 строк)
-│   ├── cbindgen.toml             # Конфиг cbindgen (резервный)
-│   ├── src/lib.rs                # Re-export + C wrappers
-│   ├── include/
-│   │   ├── syscalls.h            # Сгенерированный C заголовок
-│   │   ├── wow64_helpers.h       # WoW64 helper macros
-│   │   └── README.md
-│   ├── examples/                 # C примеры (27 файлов)
-│   ├── lib/                      # Собранные артефакты
-│   │   ├── syscalls.dll          # Dynamic library
-│   │   ├── syscalls.lib          # MSVC static lib
-│   │   └── syscalls_mingw.a      # MinGW static lib
-│   ├── build.bat
-│   └── build_all.bat
+├── syscalls-standalone/          # bin: генератор self-contained C/H/MASM bundle
+│   ├── Cargo.toml
+│   └── src/
+│       ├── main.rs               # CLI (--out <dir> [--lib <lib.rs>])
+│       ├── parse.rs              # regex-парсер lib.rs + ROR8 hash
+│       ├── emit_h.rs             # syscalls.h emit (X-prefix)
+│       ├── emit_c.rs             # syscalls.c emit (CRT-free runtime)
+│       ├── emit_asm_x64.rs       # syscallsstubs.x64.asm emit (MASM + RAS)
+│       ├── emit_stubs_x86.rs     # syscallsstubs.x86.c emit (__declspec(naked))
+│       ├── emit_props.rs         # syscalls.props (MSBuild) + README template
+│       └── bin/audit.rs          # hash-collision audit bin
 └── Docs/                         # Документация
 ```
+
+**История**: раньше был подкрейт `c-bindings/` (`syscalls-c`), эмитил
+`syscalls.h` + `staticlib`+`cdylib`. Удалён 2026-07-28 -- полностью заменён
+на `syscalls-standalone` (модель "source drop-in" вместо "pre-built binary
++ Rust build у consumer'а"). См. `DECISIONS.md`, ADR-17.
 
 ## Модули и зависимости
 
@@ -60,17 +61,26 @@ error.rs
 └── Constants (24)               STATUS_SUCCESS, STATUS_ACCESS_DENIED, ...
 ```
 
-### C биндинги (syscalls-c)
+### Standalone bundle generator (syscalls-standalone)
 
 ```
-c-bindings/build.rs              Парсит lib.rs регулярками, генерирует:
-├── c_wrappers.rs (OUT_DIR)      extern "C" fn SW3NtXxx() обёртки
-└── include/syscalls.h           C заголовок с типами, константами, функциями
-
-c-bindings/src/lib.rs
-├── pub use syscalls::*          Re-export всего из основного крейта
-└── include!(c_wrappers.rs)      Подключение сгенерированных обёрток
+syscalls-standalone/src/         Парсит lib.rs (regex) и эмитит:
+├── parse.rs                     - Function/Param/Parsed структуры + ROR8 hash
+├── emit_h.rs                    → syscalls.h (X-prefix типы, decls, macros)
+├── emit_c.rs                    → syscalls.c (CRT-free runtime + PEB walk +
+│                                              атомик init + RAS gadget setup)
+├── emit_asm_x64.rs              → syscallsstubs.x64.asm (513 MASM PROC,
+│                                              jumper_randomized + RAS,
+│                                              per-stub args-shift для N>4)
+├── emit_stubs_x86.rs            → syscallsstubs.x86.c (513 __declspec(naked)
+│                                              с WoW64 gate runtime-detect)
+├── emit_props.rs                → syscalls.props + README template
+└── main.rs                      CLI orchestrator + I/O
 ```
+
+Consumer после генерации подключает bundle **без Rust-runtime зависимости**:
+для CMake-проектов -- через `syscalls.cmake` (`xsyscalls_attach(target)`),
+для .vcxproj -- через `<Import Project="syscalls.props"/>`.
 
 ## Поток данных при вызове syscall
 

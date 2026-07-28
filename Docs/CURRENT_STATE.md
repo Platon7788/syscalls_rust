@@ -17,8 +17,10 @@
 | Крейт | Тип | Роль |
 |---|---|---|
 | `syscalls` | rlib | Основная библиотека для Rust-consumer'ов (edition 2024, no_std) |
-| `syscalls-c` (`c-bindings/`) | staticlib + cdylib | Rust re-export + generated `syscalls.h` для C-consumer'ов |
 | `syscalls-standalone` | bin | Генератор self-contained C/H/MASM drop-in bundle с `X`-префиксом для MSVC-проектов без Rust-зависимости (target: xhook) |
+
+`c-bindings/` крейт удалён 2026-07-28 -- его роль полностью покрыл
+`syscalls-standalone` (см. ADR-17 в `DECISIONS.md`).
 
 ## Статус проекта
 
@@ -68,16 +70,19 @@
 | Display/Debug форматирование | Готово |
 | Unit тесты (3 теста) | Готово |
 
-### C биндинги (c-bindings/)
+### Standalone C/H/MASM bundle (syscalls-standalone/)
 
 | Компонент | Статус |
 |-----------|--------|
-| build.rs генератор | Готово |
-| syscalls.h (автогенерация) | Готово |
-| staticlib (.lib, .a) | Готово |
-| cdylib (.dll) | Готово |
-| C примеры (26 файлов) | Готово |
-| build.bat / build_all.bat | Готово |
+| CLI (`--out <dir>`) | Готово |
+| Парсер lib.rs (regex) | Готово |
+| Emit syscalls.h (X-prefix decls) | Готово |
+| Emit syscalls.c (CRT-free runtime, атомик init) | Готово |
+| Emit syscallsstubs.x64.asm (MASM + RAS) | Готово |
+| Emit syscallsstubs.x86.c (naked + WoW64 gate) | Готово |
+| Emit syscalls.props (MSBuild) + syscalls.cmake | Готово |
+| hash-collision audit bin | Готово |
+| Verified: xhook integration (Debug/Release × Win32/x64) | Готово |
 
 ### Примеры
 
@@ -115,10 +120,12 @@
 
 | Target | Статус |
 |--------|--------|
-| x86_64-pc-windows-msvc | Готово |
-| x86_64-pc-windows-gnu | Готово |
-| i686-pc-windows-msvc | Готово (с WoW64) |
-| i686-pc-windows-gnu | Готово (с WoW64) |
+| x86_64-pc-windows-msvc | Готово, tested |
+| i686-pc-windows-msvc | Готово (с WoW64), tested |
+
+MinGW (`*-windows-gnu`) не тестируется. Кому нужно -- добавит соответствующий
+`[target.*-windows-gnu]` блок в свой workspace overlay поверх нашего
+`.cargo/config.toml` (см. также ADR-17).
 
 ## Известные ограничения
 

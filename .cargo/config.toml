@@ -1,14 +1,10 @@
-# Use static CRT linkage for all Windows targets
-# This eliminates runtime dependencies on VCRUNTIME140.dll, ucrtbase.dll, msvcrt.dll, etc.
+# Static CRT for MSVC targets: no runtime dependency on VCRUNTIME140.dll /
+# ucrtbase.dll / msvcrt.dll. Only MSVC targets are configured -- MinGW is not
+# tested against and support is left to whoever needs it (add a matching
+# [target.*-windows-gnu] block in your own consumer or workspace overlay).
 
 [target.x86_64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+crt-static"]
 
 [target.i686-pc-windows-msvc]
-rustflags = ["-C", "target-feature=+crt-static"]
-
-[target.x86_64-pc-windows-gnu]
-rustflags = ["-C", "target-feature=+crt-static"]
-
-[target.i686-pc-windows-gnu]
 rustflags = ["-C", "target-feature=+crt-static"]

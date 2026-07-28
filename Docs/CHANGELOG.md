@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Удалено (breaking)
+- **`c-bindings/` крейт** полностью удалён -- его роль (staticlib+cdylib +
+  автогенерация syscalls.h) полностью покрывает `syscalls-standalone`
+  (см. `DECISIONS.md`, ADR-17). Consumer'ы получают drop-in bundle
+  напрямую в свои проекты без Rust-runtime зависимости. 550 MB артефактов
+  из репо ушли вместе с крейтом.
+- **MinGW-таргеты** удалены из `.cargo/config.toml` --
+  `x86_64-pc-windows-gnu` и `i686-pc-windows-gnu` больше не в CI-scope.
+  Оставили только MSVC (тестируется). MinGW-consumer'ы добавят собственный
+  `[target.*-windows-gnu]` overlay если понадобится.
+- **`Docs/modules/c_bindings.md`** -- ссылается на удалённый крейт.
+
 ## [0.3.0] - 2026-07-28
 
 ### Добавлено

@@ -25,7 +25,7 @@
   `NOTES.md`, раздел «Отложенные улучшения bundle»)
 
 ### Низкий приоритет
-- [ ] CI/CD (GitHub Actions) для автосборки на MSVC и MinGW + smoke-test downstream consumers
+- [ ] CI/CD (GitHub Actions) для автосборки на MSVC × Debug/Release × Win32/x64 + smoke-test downstream consumers (Rust-крейты + xhook как reference C-consumer). MinGW не в scope (ADR-17).
 - [ ] Бенчмарки: сравнение с прямым вызовом ntdll
 - [ ] Документация inline (rustdoc) для публичных функций
 - [ ] Crates.io публикация -- **осмысленно только если API стабилизирован** и хеш-seed политика продумана (сейчас seed compile-time hardcoded во всех 513 функциях)

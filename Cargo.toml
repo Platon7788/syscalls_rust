@@ -1,5 +1,5 @@
 [workspace]
-members = ["c-bindings", "syscalls-standalone"]
+members = ["syscalls-standalone"]
 
 [package]
 name = "syscalls"
