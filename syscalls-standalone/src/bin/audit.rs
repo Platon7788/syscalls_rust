@@ -25,11 +25,7 @@ fn main() {
     for (h, names) in &buckets {
         if names.len() > 1 {
             collisions += 1;
-            println!(
-                "COLLISION at 0x{:08X}: {}",
-                h,
-                names.join(", ")
-            );
+            println!("COLLISION at 0x{:08X}: {}", h, names.join(", "));
         }
     }
     println!(

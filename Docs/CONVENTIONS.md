@@ -3,7 +3,7 @@
 ## Rust (основной крейт)
 
 ### Общие правила
-- **Edition 2024**, MSRV `1.97`, stable toolchain
+- **Edition 2024**, MSRV `1.98`, stable toolchain
 - `#![no_std]` -- без стандартной библиотеки
 - `#![allow(non_snake_case, non_camel_case_types)]` -- Windows типы сохраняют оригинальные имена
 - `#![allow(clippy::too_many_arguments)]` -- syscall'ы имеют до 17 параметров

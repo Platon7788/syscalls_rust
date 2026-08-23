@@ -68,7 +68,12 @@ fn emit_stub(w: &mut String, f: &Function) {
     let arg_count = f.params.len() as u32;
     let bytes = arg_count * 4;
 
-    writeln!(w, "__declspec(naked) {} X_STDCALL {}({}) {{", ret, name, params_str).unwrap();
+    writeln!(
+        w,
+        "__declspec(naked) {} X_STDCALL {}({}) {{",
+        ret, name, params_str
+    )
+    .unwrap();
     w.push_str("    __asm {\n");
     w.push_str("        push ebp\n");
     w.push_str("        mov  ebp, esp\n");

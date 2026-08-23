@@ -51,7 +51,10 @@ fn main() -> ExitCode {
     let outputs: [(&str, String); 6] = [
         ("syscalls.h", emit_h::emit(&parsed)),
         ("syscalls.c", emit_c::emit()),
-        ("syscallsstubs.x64.asm", emit_asm_x64::emit(&parsed.functions)),
+        (
+            "syscallsstubs.x64.asm",
+            emit_asm_x64::emit(&parsed.functions),
+        ),
         (
             "syscallsstubs.x86.c",
             emit_stubs_x86::emit(&parsed.functions),
@@ -77,7 +80,9 @@ fn parse_out(args: &[String]) -> Result<PathBuf, String> {
     let mut it = args.iter().skip(1);
     while let Some(a) = it.next() {
         if a == "--out" || a == "-o" {
-            let v = it.next().ok_or_else(|| "--out requires a value".to_string())?;
+            let v = it
+                .next()
+                .ok_or_else(|| "--out requires a value".to_string())?;
             return Ok(PathBuf::from(v));
         }
     }

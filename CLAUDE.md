@@ -16,7 +16,7 @@
 **syscalls-rust** v0.3.0 -- библиотека прямых Windows NT syscall'ов на Rust (SysWhispers3) + generator standalone C/H/MASM bundle для не-Rust consumer'ов.
 
 - `#![no_std]` (под `cfg_attr(not(test), ...)`) -- нулевые runtime-зависимости
-- **Rust edition 2024**, MSRV **1.97**, MSVC-only (MinGW не тестируется)
+- **Rust edition 2024**, MSRV **1.98**, MSVC-only (MinGW не тестируется)
 - 513 NT syscall функций с хеш-обфускацией имён
 - Прямые syscall инструкции (x64: `syscall`, x86: `sysenter`/WoW64 gate) -- без вызова ntdll
 - Полная WoW64 поддержка (x86 на 64-bit Windows) с dummy return address

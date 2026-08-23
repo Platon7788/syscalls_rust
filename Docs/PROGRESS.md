@@ -1,5 +1,29 @@
 # Журнал прогресса syscalls-rust
 
+## 2026-08-22 (toolchain bump: Rust 1.98, deps refresh, version align)
+
+- **MSRV `1.97` → `1.98`** во всех Cargo.toml (`syscalls`, `syscalls-standalone`)
+  и в docs (CLAUDE.md, README.md, CURRENT_STATE.md, CONVENTIONS.md,
+  PROJECT_OVERVIEW.md). Rust 1.98.0 (release 2026-08-20) стабильных фич,
+  напрямую применимых к нашему inline-asm/PEB-walk/no_std коду, не принёс --
+  см. `CHANGELOG.md` секция «MSRV подняли `1.97` → `1.98`» для конкретики,
+  что рассмотрено и почему не задействовано.
+- **Cargo package version** `0.1.0` → `0.3.0` в обоих крейтах -- Cargo.toml
+  висел на инициальном `0.1.0`, тогда как docs (CURRENT_STATE, PROJECT_OVERVIEW,
+  CHANGELOG) уже описывали v0.3.0. Приведено в соответствие.
+- **Deps refresh**:
+  - `regex` pin `"1"` → `"1.13"` в `syscalls-standalone/Cargo.toml` (последняя
+    minor; сам crate уже был на `1.13.1`, но pin теперь явный).
+  - `cargo update`: `aho-corasick 1.1.4 → 1.1.5`, `regex-automata 0.4.16 → 0.4.18`.
+    `memchr 2.8.3`, `regex-syntax 0.8.11`, `regex 1.13.1` -- уже на latest.
+- **Verify** (все зелёные):
+  - `cargo build --workspace` (dev + `--features debug` + `--release`).
+  - `cargo test --workspace`: 3 unit-теста в `error::tests`, 0 fail.
+  - `cargo run -p syscalls-standalone -- --out <tmp>`: 513 syscalls, 6 файлов
+    bundle сгенерированы без ошибок.
+  - `cargo run -p syscalls-standalone --bin audit`: 513/513 уникальных
+    хешей, 0 коллизий.
+
 ## 2026-07-28 (cleanup: c-bindings удалён, MinGW-таргеты сняты)
 
 - **`c-bindings/` крейт удалён** -- 550 MB артефактов и ~3200 строк generator

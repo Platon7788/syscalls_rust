@@ -25,7 +25,8 @@ pub fn emit(p: &Parsed) -> String {
 }
 
 fn preamble(h: &mut String) {
-    h.push_str(r#"/*
+    h.push_str(
+        r#"/*
  * X-Syscalls -- direct NT syscall bundle (drop-in for MSVC, CRT-free)
  *
  * Auto-generated -- DO NOT EDIT MANUALLY.
@@ -60,7 +61,8 @@ fn preamble(h: &mut String) {
 extern "C" {
 #endif
 
-"#);
+"#,
+    );
 }
 
 /// Every parsed struct gets a forward declaration so pointer aliases defined
@@ -215,7 +217,9 @@ fn normalize_literal(v: &str) -> String {
     // Strip integer type suffixes.
     let suffix_re = regex::Regex::new(r"(u|i)(8|16|32|64|size)$").unwrap();
     let mut cleaned = v.to_string();
-    for suf in ["u8", "u16", "u32", "u64", "usize", "i8", "i16", "i32", "i64", "isize"] {
+    for suf in [
+        "u8", "u16", "u32", "u64", "usize", "i8", "i16", "i32", "i64", "isize",
+    ] {
         cleaned = cleaned.replace(suf, "");
     }
     let _ = suffix_re; // used to shape allowed suffixes; kept for clarity
@@ -257,7 +261,8 @@ fn function_decls(h: &mut String, functions: &[Function]) {
 }
 
 fn helper_macros(h: &mut String) {
-    h.push_str(r#"/* ==================== Helper macros ==================== */
+    h.push_str(
+        r#"/* ==================== Helper macros ==================== */
 
 #define X_NT_SUCCESS(s)     ((X_NTSTATUS)(s) >= 0)
 #define X_NT_INFORMATION(s) ((((uint32_t)(s)) >> 30) == 1u)
@@ -276,14 +281,17 @@ fn helper_macros(h: &mut String) {
     (p)->SecurityQualityOfService = NULL; \
 } while (0)
 
-"#);
+"#,
+    );
 }
 
 fn footer(h: &mut String) {
-    h.push_str(r#"#ifdef __cplusplus
+    h.push_str(
+        r#"#ifdef __cplusplus
 } /* extern "C" */
 #endif
 
 #endif /* X_SYSCALLS_H */
-"#);
+"#,
+    );
 }

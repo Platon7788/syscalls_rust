@@ -7,7 +7,7 @@
 | | Value |
 |---|---|
 | Rust edition | **2024** |
-| MSRV | **1.97** |
+| MSRV | **1.98** |
 | Nightly required? | **Нет** -- всё на стабильном компиляторе |
 | `#![no_std]` | Да (под `cfg_attr(not(test), ...)` -- тесты работают) |
 | Cargo workspace | Да -- 3 крейта в корне |

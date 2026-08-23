@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Изменено (toolchain / deps bump)
+- **MSRV подняли `1.97` → `1.98`.** Rust 1.98 (release 2026-08-20) стабильных
+  фич, применимых к inline-asm/PEB-walk/no_std коду, не принёс. Из потенциально
+  интересного (пока не задействовано):
+  - `core::fmt::NumBuffer` + `<{int}>::format_into` -- CRT-free целочисленное
+    форматирование без allocator (могло бы упростить `no_std` Display, но
+    у нас `write!(Formatter, ...)` и так не аллоцирует).
+  - `Atomic::from_mut` / `from_mut_slice` / `get_mut_slice` -- конвертация
+    `&mut T` ↔ `&mut Atomic<T>`. Наш runtime использует `static AtomicU32`
+    напрямую -- не применимо.
+  - `[T]::subslice_range` / `str::substr_range` / `strip_circumfix`,
+    UTF-16 `String::from_utf16{le,be}[_lossy]`, algebraic float ops --
+    не пересекаются с нашим surface.
+- **Пакетные версии crate'ов `syscalls` и `syscalls-standalone` подтянуты
+  до `0.3.0`** (Cargo.toml раньше висел на `0.1.0`, документация уже была
+  на `0.3.0`).
+- **`regex` pin в `syscalls-standalone/Cargo.toml`** уточнён `"1"` → `"1.13"`
+  (последняя minor). Transitive: `aho-corasick 1.1.4 → 1.1.5`,
+  `regex-automata 0.4.16 → 0.4.18`. Verify: `cargo build --workspace`,
+  `cargo test --workspace` (3/3 в `error::tests`), release build,
+  regenerate standalone bundle (513 syscalls, 0 hash-collisions) --
+  всё зелёное.
+
 ### Удалено (breaking)
 - **`c-bindings/` крейт** полностью удалён -- его роль (staticlib+cdylib +
   автогенерация syscalls.h) полностью покрывает `syscalls-standalone`

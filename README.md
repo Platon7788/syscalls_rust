@@ -34,12 +34,12 @@ syscalls = { path = "path/to/this/crate" }
 
 ### Rust Toolchain
 
-This crate builds on **stable Rust 1.97+** (edition 2024). No nightly
+This crate builds on **stable Rust 1.98+** (edition 2024). No nightly
 required — `naked_asm!` and `#[unsafe(naked)]` are both stable.
 
 ```toml
 # In your consumer crate's Cargo.toml — MSRV pin recommended:
-rust-version = "1.97"
+rust-version = "1.98"
 edition      = "2024"
 ```
 

@@ -15,7 +15,7 @@
 
 | Компонент | Технология |
 |-----------|------------|
-| Язык | Rust (edition **2024**, MSRV **1.97**, `#![no_std]`, stable) |
+| Язык | Rust (edition **2024**, MSRV **1.98**, `#![no_std]`, stable) |
 | Архитектура | x86_64, i686 (Windows only) |
 | Сборка | Cargo, custom build.rs для C header |
 | C биндинги | staticlib + cdylib, автогенерация .h |
