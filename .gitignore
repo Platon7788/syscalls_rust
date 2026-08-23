@@ -24,6 +24,8 @@ Cargo.lock
 # AI assistant local config
 .claude/
 c-bindings/.claude/
+.mcp.json
+.xflow/
 
 # Build logs
 *.log

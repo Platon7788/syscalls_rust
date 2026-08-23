@@ -880,7 +880,7 @@ skip this validation, which can cause different error codes or behavior.
 
 ## License
 
-MIT — see [LICENSE](LICENSE) (top-level Cargo.toml). C-bindings sub-crate is also MIT.
+MIT — see [LICENSE](LICENSE) (top-level Cargo.toml). The `syscalls-standalone` sub-crate is also MIT.
 
 ## Downstream consumers (path-dep)
 
