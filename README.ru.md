@@ -5,48 +5,49 @@
 [![Edition: 2024](https://img.shields.io/badge/edition-2024-green.svg)](https://doc.rust-lang.org/edition-guide/rust-2024/)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows%20x64%20%2F%20x86-lightgrey.svg)]()
 
-**[🇷🇺 Русская версия](README.ru.md)**
+**[🇬🇧 English version](README.md)**
 
-Direct Windows NT syscall library for Rust — 513 functions, no `ntdll` linkage,
-full WoW64 support, hash-obfuscated names, JUMPER_RANDOMIZED + Return-Address
-Spoofing. Includes a code generator that emits a self-contained C/H/MASM drop-in
-bundle for non-Rust consumers.
+Библиотека прямых Windows NT syscall'ов для Rust — 513 функций, без линковки
+с `ntdll`, полная поддержка WoW64, хеш-обфускация имён, JUMPER_RANDOMIZED +
+Return-Address Spoofing. Включает генератор self-contained C/H/MASM drop-in
+bundle для не-Rust потребителей.
 
-> ⚠️ **Security Notice**: Intended for security research, red team operations,
-> and legitimate security testing only. Misuse may violate laws and regulations.
-
----
-
-## Features
-
-- **513 NT syscalls** — complete Windows NT surface (`Nt*` / `Zw*`)
-- **No `ntdll` linkage** — syscall numbers resolved at runtime via PEB walk
-- **Hash obfuscation** — ROR8 + seed `0xB8A54425`; function names absent from binary
-- **JUMPER_RANDOMIZED** — jumps to a random `syscall; ret` slide in ntdll, spoofing the return address
-- **Return-Address Spoofing (RAS)** — on x64 in the generated bundle
-- **WoW64 support** — all 513 stubs have an x86 variant with runtime WoW64 gate detection
-- **`#![no_std]`** — zero runtime dependencies (under `cfg_attr(not(test), ...)`)
-- **Stable Rust** — `naked_asm!` and `#[unsafe(naked)]` are stable since 1.85; no nightly needed
-- **Standalone bundle** — `cargo run -p syscalls-standalone -- --out <dir>` emits drop-in C/H/MASM
+> ⚠️ **Security Notice**: Предназначена для security research, red team операций
+> и легитимного security testing. Неправомерное использование может нарушать
+> законодательство.
 
 ---
 
-## Architecture
+## Возможности
 
-### Workspace Structure
+- **513 NT syscall'ов** — полная поверхность Windows NT (`Nt*` / `Zw*`)
+- **Без линковки с `ntdll`** — номера syscall'ов определяются в runtime через PEB walk
+- **Хеш-обфускация** — ROR8 + seed `0xB8A54425`; имён функций нет в бинарнике
+- **JUMPER_RANDOMIZED** — прыжок на случайный `syscall; ret` слайд в ntdll, подмена return address
+- **Return-Address Spoofing (RAS)** — на x64 в генерируемом bundle
+- **Поддержка WoW64** — все 513 стабов имеют x86 вариант с runtime-определением WoW64 gate
+- **`#![no_std]`** — нулевые runtime-зависимости (под `cfg_attr(not(test), ...)`)
+- **Stable Rust** — `naked_asm!` и `#[unsafe(naked)]` стабильны с 1.85; nightly не нужен
+- **Standalone bundle** — `cargo run -p syscalls-standalone -- --out <dir>` генерирует drop-in C/H/MASM
+
+---
+
+## Архитектура
+
+### Структура workspace
 
 ```mermaid
 graph TD
     WS["📦 Workspace: syscalls-rust"]
-    SC["🦀 syscalls (rlib)\nno_std · edition 2024\nRust consumers"]
-    SS["⚙️ syscalls-standalone (bin)\nBundle generator\nC/C++ consumers"]
+    SC["🦀 syscalls (rlib)\nno_std · edition 2024\nRust потребители"]
+    SS["⚙️ syscalls-standalone (bin)\nГенератор bundle\nC/C++ потребители"]
 
-    LIB["lib.rs\n~58K lines · 513 syscalls\n200+ type aliases · 198 constants\n25+ structs · SW3 runtime"]
+    LIB["lib.rs\n~58K строк · 513 syscall'ов\n200+ type alias · 198 констант\n25+ структур · SW3 runtime"]
     ERR["error.rs\nNtStatus · NtResult·T·\nNtStatusExt trait"]
 
-    PARSE["parse.rs\nRegex parser\nROR8 hash"]
-    EMIT_H["emit_h.rs → syscalls.h\nX-prefix types & decls"]
-    EMIT_C["emit_c.rs → syscalls.c\nCRT-free runtime + PEB walk\nAtomic init + RAS gadget"]
+    PARSE["parse.rs\nRegex-парсер\nROR8 хеш"]
+    EMIT_H["emit_h.rs → syscalls.h\nX-prefix типы и объявления"]
+    EMIT_C["emit_c.rs → syscalls.c\nCRT-free runtime + PEB walk\nАтомик init + RAS gadget"]
     EMIT_ASM["emit_asm_x64.rs\n→ syscallsstubs.x64.asm\nMASM · 513 PROC\nJUMPER_RANDOMIZED + RAS"]
     EMIT_X86["emit_stubs_x86.rs\n→ syscallsstubs.x86.c\n__declspec(naked) · WoW64"]
     EMIT_PROPS["emit_props.rs\n→ syscalls.props (MSBuild)\n→ syscalls.cmake"]
@@ -63,19 +64,19 @@ graph TD
     PARSE --> EMIT_PROPS
 ```
 
-### Syscall Resolution Flow
+### Поток выполнения syscall
 
 ```mermaid
 flowchart TD
     A["nt_allocate_virtual_memory(...)"]
-    B{"SW3_SYSCALL_LIST\ninitialized?"}
+    B{"SW3_SYSCALL_LIST\nинициализирован?"}
     C["sw3_populate_syscall_list()"]
-    D["Read PEB\ngs:[0x60] (x64)\nfs:[0x30] (x86)"]
-    E["Locate ntdll.dll\nPEB → Ldr → InLoadOrderModuleList"]
-    F["Walk Export Table\ncollect Zw* functions"]
-    G["Sort by address\nindex = syscall number"]
-    H["Hash all names\nROR8 + seed 0xB8A54425"]
-    I["SW3_SYSCALL_LIST ready\n(AtomicU32 count, Release store)"]
+    D["Читаем PEB\ngs:[0x60] (x64)\nfs:[0x30] (x86)"]
+    E["Находим ntdll.dll\nPEB → Ldr → InLoadOrderModuleList"]
+    F["Обходим Export Table\nсобираем Zw* функции"]
+    G["Сортируем по адресу\nиндекс = номер syscall"]
+    H["Хешируем имена\nROR8 + seed 0xB8A54425"]
+    I["SW3_SYSCALL_LIST готов\n(AtomicU32 count, Release store)"]
     J["sw3_get_syscall_number(hash)\nAcquire load"]
     K["sw3_get_random_syscall_address()\nJUMPER_RANDOMIZED"]
     L["inline ASM\nmov r10, rcx\nmov eax, SSN\njmp [random_addr]"]
@@ -83,55 +84,55 @@ flowchart TD
     N["NTSTATUS → RAX"]
 
     A --> B
-    B -->|"No (first call)"| C
+    B -->|"Нет (первый вызов)"| C
     C --> D --> E --> F --> G --> H --> I
     I --> J
-    B -->|Yes| J
+    B -->|Да| J
     J --> K --> L --> M --> N
 ```
 
-### Calling Conventions
+### Соглашения о вызовах
 
 ```mermaid
 graph LR
     subgraph x64["x64 — Native"]
         direction TB
-        X1["param 1 → RCX\n(→ R10 for syscall)"]
+        X1["param 1 → RCX\n(→ R10 для syscall)"]
         X2["param 2 → RDX"]
         X3["param 3 → R8"]
         X4["param 4 → R9"]
         X5["params 5+ → Stack\nRSP+0x28, +0x30 …"]
-        XR["SSN → EAX\nret → RAX (NTSTATUS)"]
+        XR["SSN → EAX\nreturn → RAX (NTSTATUS)"]
     end
 
     subgraph x86["x86 — WoW64"]
         direction TB
-        W1["All params → Stack (stdcall)"]
-        W2{"fs:[0xC0] != 0?\n(WoW64 process)"}
+        W1["Все params → Stack (stdcall)"]
+        W2{"fs:[0xC0] != 0?\n(WoW64 процесс)"}
         W3["push dummy ret addr\ncall WoW64 gate"]
         W4["sysenter convention\nmov edx, esp"]
-        WR["SSN → EAX\nret → EAX (NTSTATUS)"]
+        WR["SSN → EAX\nreturn → EAX (NTSTATUS)"]
         W1 --> W2
-        W2 -->|Yes| W3 --> WR
-        W2 -->|No| W4 --> WR
+        W2 -->|Да| W3 --> WR
+        W2 -->|Нет| W4 --> WR
     end
 ```
 
 ---
 
-## Quick Start
+## Быстрый старт
 
-### Add Dependency
+### Зависимость
 
 ```toml
 [dependencies]
 syscalls = { path = "path/to/syscalls-rust" }
 ```
 
-Requires **MSVC toolchain** (`x86_64-pc-windows-msvc` or `i686-pc-windows-msvc`).
-No nightly needed — stable Rust 1.98+ is sufficient.
+Требуется **MSVC toolchain** (`x86_64-pc-windows-msvc` или `i686-pc-windows-msvc`).
+Nightly не нужен — достаточно stable Rust 1.98+.
 
-### Basic Memory Allocation
+### Базовый пример — аллокация памяти
 
 ```rust
 use syscalls::*;
@@ -150,7 +151,7 @@ unsafe {
     );
 
     if NT_SUCCESS(status) {
-        // ... use memory ...
+        // ... используем память ...
 
         let mut free_size: SIZE_T = 0;
         nt_free_virtual_memory(NtCurrentProcess(), &mut base, &mut free_size, MEM_RELEASE);
@@ -158,7 +159,7 @@ unsafe {
 }
 ```
 
-### Error Handling with `NtStatus`
+### Обработка ошибок через `NtStatus`
 
 ```rust
 use syscalls::{NtStatus, NtStatusExt, *};
@@ -166,15 +167,15 @@ use syscalls::{NtStatus, NtStatusExt, *};
 unsafe {
     let raw = nt_open_process(/* ... */);
 
-    // Pattern 1 — macro check
+    // Вариант 1 — макрос
     if NT_SUCCESS(raw) { /* ok */ }
 
-    // Pattern 2 — typed wrapper
+    // Вариант 2 — типизированная обёртка
     let status = NtStatus::from(raw);
-    println!("{}", status); // e.g. "STATUS_ACCESS_DENIED"
+    println!("{}", status); // например "STATUS_ACCESS_DENIED"
 
-    // Pattern 3 — Result
-    raw.to_result()?; // returns Err(NtStatus) on failure
+    // Вариант 3 — Result
+    raw.to_result()?; // возвращает Err(NtStatus) при ошибке
 }
 ```
 
@@ -182,29 +183,29 @@ unsafe {
 
 ## Standalone C/H/MASM Bundle
 
-For C/C++ projects that cannot take a Rust dependency:
+Для C/C++ проектов без зависимости от Rust:
 
 ```bash
 cargo run -p syscalls-standalone -- --out D:\path\to\output
 ```
 
-Emits a self-contained drop-in (no Rust runtime required):
+Генерирует self-contained drop-in (Rust runtime не нужен):
 
-| File | Description |
-|------|-------------|
-| `syscalls.h` | X-prefix type aliases + 513 function declarations + macros |
-| `syscalls.c` | CRT-free runtime: PEB walk, atomic init, RAS gadget setup |
-| `syscallsstubs.x64.asm` | MASM — 513 PROC stubs with JUMPER_RANDOMIZED + RAS |
-| `syscallsstubs.x86.c` | `__declspec(naked)` stubs with WoW64 gate detection |
-| `syscalls.props` | MSBuild property sheet (`.vcxproj` integration) |
-| `syscalls.cmake` | CMake integration (`xsyscalls_attach(target)`) |
+| Файл | Описание |
+|------|----------|
+| `syscalls.h` | X-prefix типы + 513 объявлений функций + макросы |
+| `syscalls.c` | CRT-free runtime: PEB walk, атомик init, RAS gadget setup |
+| `syscallsstubs.x64.asm` | MASM — 513 PROC стабов с JUMPER_RANDOMIZED + RAS |
+| `syscallsstubs.x86.c` | `__declspec(naked)` стабы с WoW64 gate detection |
+| `syscalls.props` | MSBuild property sheet (интеграция в `.vcxproj`) |
+| `syscalls.cmake` | CMake интеграция (`xsyscalls_attach(target)`) |
 
-All symbols carry an `X` prefix (`XNtAllocateVirtualMemory`, `X_HANDLE`, …) to
-avoid conflicts with `<windows.h>`.
+Все символы имеют `X`-префикс (`XNtAllocateVirtualMemory`, `X_HANDLE`, …) —
+не конфликтует с `<windows.h>`.
 
 ---
 
-## Build
+## Сборка
 
 ### Targets
 
@@ -215,50 +216,50 @@ cargo build --release --target x86_64-pc-windows-msvc
 # x86 / WoW64
 cargo build --release --target i686-pc-windows-msvc
 
-# Both (workspace)
+# Оба (workspace)
 cargo build --workspace --release
 ```
 
 ### Features
 
-| Feature | Description |
-|---------|-------------|
-| `debug` | Insert `int3` before each syscall (for debugger breakpoints) |
+| Feature | Описание |
+|---------|----------|
+| `debug` | Вставляет `int3` перед каждым syscall (для отладчика) |
 
 ```toml
 syscalls = { path = "…", features = ["debug"] }
 ```
 
-### Release profile
+### Release-профиль
 
-| Setting | Value | Reason |
-|---------|-------|--------|
-| `opt-level` | `"z"` | Minimize binary size |
+| Параметр | Значение | Причина |
+|----------|----------|---------|
+| `opt-level` | `"z"` | Минимизация размера бинарника |
 | `lto` | `true` | Cross-crate inlining |
-| `codegen-units` | `1` | Better optimization |
-| `panic` | `"abort"` | No unwinding, no CRT |
-| `strip` | `true` | Remove debug symbols |
+| `codegen-units` | `1` | Лучшая оптимизация |
+| `panic` | `"abort"` | Без unwinding, без CRT |
+| `strip` | `true` | Удаление debug символов |
 
 ---
 
-## Configuration
+## Конфигурация
 
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| **Seed** | `0xB8A54425` | Compile-time ROR8 hash seed — do **not** change without rehashing all stubs |
-| **Architecture** | `x86_64 + x86` | Host-native x64 and WoW64 x86 |
-| **Recovery** | `JUMPER_RANDOMIZED` | Random `syscall; ret` slide in ntdll |
-| **WoW64** | all 513 stubs | Runtime gate detection via `fs:[0xC0]` |
-| **Functions** | 513 | Full `Nt*` surface |
+| Параметр | Значение | Описание |
+|----------|----------|----------|
+| **Seed** | `0xB8A54425` | Compile-time ROR8 хеш seed — **не менять** без пересчёта всех хешей |
+| **Архитектура** | `x86_64 + x86` | Host-native x64 и WoW64 x86 |
+| **Recovery** | `JUMPER_RANDOMIZED` | Случайный `syscall; ret` слайд в ntdll |
+| **WoW64** | все 513 стабов | Runtime-определение gate через `fs:[0xC0]` |
+| **Функций** | 513 | Полная `Nt*` поверхность |
 
 ---
 
-## Function Reference
+## Справочник функций
 
-### Summary
+### Сводная таблица
 
-| Category | Count | Examples |
-|----------|-------|---------|
+| Категория | Количество | Примеры |
+|-----------|-----------|---------|
 | Memory | 12 | `NtAllocateVirtualMemory`, `NtProtectVirtualMemory`, `NtQueryVirtualMemory` |
 | Process | 32 | `NtCreateProcess`, `NtOpenProcess`, `NtTerminateProcess` |
 | Thread | 33 | `NtCreateThread`, `NtSuspendThread`, `NtGetContextThread` |
@@ -269,12 +270,12 @@ syscalls = { path = "…", features = ["debug"] }
 | Object | 22 | `NtClose`, `NtDuplicateObject`, `NtQueryObject` |
 | System | 9 | `NtQuerySystemInformation`, `NtQuerySystemTime` |
 | Other | 127 | ALPC, atoms, audit, debug, power, enclave, … |
-| **Total** | **513** | |
+| **Итого** | **513** | |
 
 ### Memory (12)
 
-| NT Function | Rust Function |
-|-------------|---------------|
+| NT Функция | Rust Функция |
+|------------|--------------|
 | `NtAllocateVirtualMemory` | `nt_allocate_virtual_memory` |
 | `NtAllocateVirtualMemoryEx` | `nt_allocate_virtual_memory_ex` |
 | `NtFlushVirtualMemory` | `nt_flush_virtual_memory` |
@@ -290,8 +291,8 @@ syscalls = { path = "…", features = ["debug"] }
 
 ### Process (32)
 
-| NT Function | Rust Function |
-|-------------|---------------|
+| NT Функция | Rust Функция |
+|------------|--------------|
 | `NtAcquireProcessActivityReference` | `nt_acquire_process_activity_reference` |
 | `NtAlpcOpenSenderProcess` | `nt_alpc_open_sender_process` |
 | `NtAssignProcessToJobObject` | `nt_assign_process_to_job_object` |
@@ -327,8 +328,8 @@ syscalls = { path = "…", features = ["debug"] }
 
 ### Thread (33)
 
-| NT Function | Rust Function |
-|-------------|---------------|
+| NT Функция | Rust Функция |
+|------------|--------------|
 | `NtAlertMultipleThreadByThreadId` | `nt_alert_multiple_thread_by_thread_id` |
 | `NtAlertResumeThread` | `nt_alert_resume_thread` |
 | `NtAlertThread` | `nt_alert_thread` |
@@ -365,8 +366,8 @@ syscalls = { path = "…", features = ["debug"] }
 
 ### File / IO (163)
 
-| NT Function | Rust Function |
-|-------------|---------------|
+| NT Функция | Rust Функция |
+|------------|--------------|
 | `NtAlpcCreatePortSection` | `nt_alpc_create_port_section` |
 | `NtAlpcCreateSectionView` | `nt_alpc_create_section_view` |
 | `NtAlpcDeletePortSection` | `nt_alpc_delete_port_section` |
@@ -533,8 +534,8 @@ syscalls = { path = "…", features = ["debug"] }
 
 ### Registry (49)
 
-| NT Function | Rust Function |
-|-------------|---------------|
+| NT Функция | Rust Функция |
+|------------|--------------|
 | `NtCompactKeys` | `nt_compact_keys` |
 | `NtCompressKey` | `nt_compress_key` |
 | `NtCreateKey` | `nt_create_key` |
@@ -587,8 +588,8 @@ syscalls = { path = "…", features = ["debug"] }
 
 ### Token (21)
 
-| NT Function | Rust Function |
-|-------------|---------------|
+| NT Функция | Rust Функция |
+|------------|--------------|
 | `NtAdjustGroupsToken` | `nt_adjust_groups_token` |
 | `NtAdjustPrivilegesToken` | `nt_adjust_privileges_token` |
 | `NtAdjustTokenClaimsAndDeviceGroups` | `nt_adjust_token_claims_and_device_groups` |
@@ -613,8 +614,8 @@ syscalls = { path = "…", features = ["debug"] }
 
 ### Synchronization (45)
 
-| NT Function | Rust Function |
-|-------------|---------------|
+| NT Функция | Rust Функция |
+|------------|--------------|
 | `NtAcquireCrossVmMutant` | `nt_acquire_cross_vm_mutant` |
 | `NtAlpcSendWaitReceivePort` | `nt_alpc_send_wait_receive_port` |
 | `NtCancelTimer` | `nt_cancel_timer` |
@@ -663,8 +664,8 @@ syscalls = { path = "…", features = ["debug"] }
 
 ### Object (22)
 
-| NT Function | Rust Function |
-|-------------|---------------|
+| NT Функция | Rust Функция |
+|------------|--------------|
 | `NtAccessCheckByTypeResultListAndAuditAlarmByHandle` | `nt_access_check_by_type_result_list_and_audit_alarm_by_handle` |
 | `NtAllocateReserveObject` | `nt_allocate_reserve_object` |
 | `NtClose` | `nt_close` |
@@ -690,8 +691,8 @@ syscalls = { path = "…", features = ["debug"] }
 
 ### System (9)
 
-| NT Function | Rust Function |
-|-------------|---------------|
+| NT Функция | Rust Функция |
+|------------|--------------|
 | `NtGetDevicePowerState` | `nt_get_device_power_state` |
 | `NtIsSystemResumeAutomatic` | `nt_is_system_resume_automatic` |
 | `NtPlugPlayControl` | `nt_plug_play_control` |
@@ -704,8 +705,8 @@ syscalls = { path = "…", features = ["debug"] }
 
 ### Section / Semaphore (8)
 
-| NT Function | Rust Function |
-|-------------|---------------|
+| NT Функция | Rust Функция |
+|------------|--------------|
 | `NtAcquireCMFViewOwnership` | `nt_acquire_cmf_view_ownership` |
 | `NtCreateSemaphore` | `nt_create_semaphore` |
 | `NtMapUserPhysicalPages` | `nt_map_user_physical_pages` |
@@ -717,41 +718,40 @@ syscalls = { path = "…", features = ["debug"] }
 
 ---
 
-## Important Notes
+## Важные замечания
 
-### Pointer parameters are IN/OUT
+### Параметры-указатели — IN/OUT
 
-Many syscalls take mutable pointer parameters that serve as both input and output:
+Многие syscall'ы принимают изменяемые указатели, которые являются одновременно входными и выходными:
 
 ```rust
-// WRONG — won't compile
+// НЕПРАВИЛЬНО — не скомпилируется
 let region_size: SIZE_T = 0x1000;
 nt_allocate_virtual_memory(..., &region_size, ...);
 
-// CORRECT
+// ПРАВИЛЬНО
 let mut region_size: SIZE_T = 0x1000;
 nt_allocate_virtual_memory(..., &mut region_size, ...);
 ```
 
-### Pseudo-handles
+### Псевдо-хэндлы
 
 ```rust
-NtCurrentProcess()  // (HANDLE)-1 — current process
-NtCurrentThread()   // (HANDLE)-2 — current thread
+NtCurrentProcess()  // (HANDLE)-1 — текущий процесс
+NtCurrentThread()   // (HANDLE)-2 — текущий поток
 ```
 
-### Thread safety
+### Потокобезопасность
 
-`SW3_SYSCALL_LIST` is initialized lazily on the first syscall call.
-The initialization uses `AtomicU32` + `AtomicBool` CAS gate — the winner
-populates the table and publishes `count` with `Release`; losers spin on
-an `Acquire` load. Race-to-initialize is safe: all threads compute the
-same result.
+`SW3_SYSCALL_LIST` инициализируется лениво при первом вызове. Инициализация
+использует `AtomicU32` + `AtomicBool` CAS gate — победитель заполняет таблицу
+и публикует `count` с `Release`; проигравшие спинятся на `Acquire` load.
+Гонка при инициализации безопасна: все потоки вычисляют один и тот же результат.
 
-### Common NTSTATUS codes
+### Частые коды NTSTATUS
 
-| Code | Name |
-|------|------|
+| Код | Имя |
+|-----|-----|
 | `0x00000000` | `STATUS_SUCCESS` |
 | `0x00000102` | `STATUS_TIMEOUT` |
 | `0x80000005` | `STATUS_BUFFER_OVERFLOW` |
@@ -763,35 +763,34 @@ same result.
 
 ---
 
-## Troubleshooting
+## Диагностика
 
-### "Syscall not found" (returns `0xFFFFFFFF`)
+### «Syscall not found» (возвращает `0xFFFFFFFF`)
 
-The function hash does not match any export in ntdll. Possible causes:
-- The function does not exist on this Windows version
-- The seed was changed after compilation (never change `SW3_SEED = 0xB8A54425`)
-- ntdll is hooked in a way that breaks export table enumeration
+Хеш функции не совпал ни с одним экспортом ntdll. Возможные причины:
+- Функция отсутствует в данной версии Windows
+- Seed изменён после компиляции (никогда не менять `SW3_SEED = 0xB8A54425`)
+- ntdll захучен так, что нарушена таблица экспортов
 
-### `STATUS_ACCESS_VIOLATION` on syscall
+### `STATUS_ACCESS_VIOLATION` при syscall
 
-Usually incorrect parameters:
-- NULL pointer where a valid pointer is expected
-- Invalid handle
-- Misaligned or undersized buffer
+Обычно неверные параметры:
+- NULL-указатель там, где требуется валидный
+- Некорректный handle
+- Неверно выровненный или слишком маленький буфер
 
-### Different behaviour compared to `ntdll`
+### Поведение отличается от `ntdll`
 
-Some `ntdll` wrappers perform additional validation before issuing the
-syscall. Direct syscalls skip that validation, which can produce different
-error codes.
-
----
-
-## License
-
-MIT — see [LICENSE](LICENSE).
+Некоторые обёртки `ntdll` выполняют дополнительную валидацию перед системным вызовом.
+Прямые syscall'ы её пропускают — это может давать другие коды ошибок.
 
 ---
 
-*Originally generated by [SysWhispers3](https://github.com/klezVirus/SysWhispers3),
-then extended with WoW64, edition 2024, RAS, and standalone bundle generation.*
+## Лицензия
+
+MIT — см. [LICENSE](LICENSE).
+
+---
+
+*Изначально сгенерирован [SysWhispers3](https://github.com/klezVirus/SysWhispers3),
+затем расширен: WoW64, edition 2024, RAS, генератор standalone bundle.*
