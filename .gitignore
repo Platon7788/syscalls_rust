@@ -26,6 +26,7 @@ Cargo.lock
 c-bindings/.claude/
 .mcp.json
 .xflow/
+CLAUDE.md
 
 # Build logs
 *.log
