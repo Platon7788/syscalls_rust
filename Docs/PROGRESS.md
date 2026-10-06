@@ -1,5 +1,14 @@
 # Журнал прогресса syscalls-rust
 
+## 2026-10-06 — Rust 1.99 и зависимости
+
+- Toolchain 1.99.0, MSRV 1.99 в обоих манифестах; regex 1.13.1.
+- Изменения не затрагивают generated lib.rs, ASM и hash-seed.
+- Проверено на Windows x64: fmt, Clippy -D warnings, тесты/doctests с
+  all/default/no-default features, rustdoc -D warnings, release-сборка,
+  генерация bundle и аудит 513 уникальных хешей без коллизий.
+
+
 ## 2026-08-22 (toolchain bump: Rust 1.98, deps refresh, version align)
 
 - **MSRV `1.97` → `1.98`** во всех Cargo.toml (`syscalls`, `syscalls-standalone`)

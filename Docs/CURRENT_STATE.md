@@ -7,7 +7,7 @@
 | | Value |
 |---|---|
 | Rust edition | **2024** |
-| MSRV | **1.98** |
+| MSRV | **1.99** |
 | Nightly required? | **Нет** -- всё на стабильном компиляторе |
 | `#![no_std]` | Да (под `cfg_attr(not(test), ...)` -- тесты работают) |
 | Cargo workspace | Да -- 2 крейта (`syscalls` + `syscalls-standalone`) |

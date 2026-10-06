@@ -1,7 +1,7 @@
 # syscalls-rust
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Rust: 1.98+](https://img.shields.io/badge/rust-1.98%2B-orange.svg)](https://www.rust-lang.org)
+[![Rust: 1.99+](https://img.shields.io/badge/rust-1.99%2B-orange.svg)](https://www.rust-lang.org)
 [![Edition: 2024](https://img.shields.io/badge/edition-2024-green.svg)](https://doc.rust-lang.org/edition-guide/rust-2024/)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows%20x64%20%2F%20x86-lightgrey.svg)]()
 
@@ -130,7 +130,7 @@ syscalls = { path = "path/to/syscalls-rust" }
 ```
 
 Требуется **MSVC toolchain** (`x86_64-pc-windows-msvc` или `i686-pc-windows-msvc`).
-Nightly не нужен — достаточно stable Rust 1.98+.
+Nightly не нужен — достаточно stable Rust 1.99+.
 
 ### Базовый пример — аллокация памяти
 

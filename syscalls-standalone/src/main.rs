@@ -3,7 +3,9 @@
 //! include `syscalls.h`.
 //!
 //! Usage:
-//!     cargo run -p syscalls-standalone -- --out <path>
+//! ```text
+//! cargo run -p syscalls-standalone -- --out <path>
+//! ```
 
 mod emit_asm_x64;
 mod emit_c;

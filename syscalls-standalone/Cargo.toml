@@ -2,7 +2,7 @@
 name = "syscalls-standalone"
 version = "0.3.0"
 edition = "2024"
-rust-version = "1.98"
+rust-version = "1.99"
 description = "Emit self-contained C/H/MASM syscall drop-in bundle from lib.rs"
 license = "MIT"
 default-run = "syscalls-standalone"
@@ -12,4 +12,4 @@ name = "syscalls-standalone"
 path = "src/main.rs"
 
 [dependencies]
-regex = "1.13"
+regex = "1.13.1"

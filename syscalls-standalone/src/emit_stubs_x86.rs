@@ -1,5 +1,5 @@
 //! Emit `syscallsstubs.x86.c` -- MSVC `__declspec(naked)` stubs with inline
-//! `__asm`. Runtime-detects WoW64 (fs:[0C0h] != 0) and dispatches through the
+//! `__asm`. Runtime-detects WoW64 (`fs:[0C0h] != 0`) and dispatches through the
 //! gate or via a native `sysenter; ret` in ntdll.
 
 use crate::parse::{Function, rust_to_c_type};
