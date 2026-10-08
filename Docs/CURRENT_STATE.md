@@ -136,6 +136,10 @@ MinGW (`*-windows-gnu`) не тестируется. Кому нужно -- до
    diversification и HalosGate fallback (см. `NOTES.md`, раздел
    «Отложенные улучшения bundle» для приоритетов)
 
+## Native init reliability (2026-10-08)
+
+Terminal Failed/Ready publication, single-writer UnsafeCell, отсутствие empty/full table success и корректное невыровненное чтение DLL name. Реальные x64/x86 tests и read-only syscall PASS; emitted C fault/native checks `/W4 /WX` PASS. Подробности: ARCHITECTURE/PROGRESS. Failure кэшируется до нового процесса; библиотека не прерывает зависший native initializer.
+
 ## Известные проблемы
 
 - Нет CI/CD (см. `NOTES.md` -- CI regression tests для generator в отложенных)

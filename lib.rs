@@ -44,6 +44,8 @@
 // function, not per operation.
 #![allow(unsafe_op_in_unsafe_fn)]
 
+mod init;
+
 // Error handling module
 pub mod error;
 pub use error::*;
@@ -802,38 +804,46 @@ struct SW3SyscallEntry {
     syscall_address: usize,
 }
 
-/// Global syscall list
-///
-/// `count` is the atomic publication flag: writers fill `entries[..]` first, then
-/// store `count` with `Release`; readers load `count` with `Acquire` before
-/// touching any entry. `init_started` gates racing callers into a single
-/// initializer — losers spin on `count` until the winner publishes.
+/// Global syscall list with one initializer and immutable published entries.
+/// `init.count` is published with Release only after the table is complete;
+/// readers acquire a nonzero count before accessing any entry. Failed init is
+/// terminal and keeps count zero, so no failed table can be read.
 #[repr(C)]
 struct SW3SyscallList {
-    count: core::sync::atomic::AtomicU32,
-    init_started: core::sync::atomic::AtomicBool,
-    entries: [SW3SyscallEntry; SW3_MAX_ENTRIES],
+    init: init::Init,
+    entries: core::cell::UnsafeCell<[SW3SyscallEntry; SW3_MAX_ENTRIES]>,
 }
 
+// SAFETY: only the Init CAS winner mutates entries; its unique mutable borrow
+// ends before publishing count/Ready with Release. Readers acquire nonzero
+// count before borrowing immutable entries. Neither Ready nor Failed retries.
+unsafe impl Sync for SW3SyscallList {}
+
 static SW3_SYSCALL_LIST: SW3SyscallList = SW3SyscallList {
-    count: core::sync::atomic::AtomicU32::new(0),
-    init_started: core::sync::atomic::AtomicBool::new(false),
-    entries: [SW3SyscallEntry {
-        hash: 0,
-        address: 0,
-        syscall_address: 0,
-    }; SW3_MAX_ENTRIES],
+    init: init::Init::new(),
+    entries: core::cell::UnsafeCell::new(
+        [SW3SyscallEntry {
+            hash: 0,
+            address: 0,
+            syscall_address: 0,
+        }; SW3_MAX_ENTRIES],
+    ),
 };
 
-/// Mutable access to the syscall table. Callers must uphold the publication
-/// protocol described on [`SW3SyscallList`]. Only [`sw3_populate_syscall_list`]
-/// mutates `entries`, and it does so before the `Release` store to `count`.
+/// Only the exclusive initializer may borrow entries before publication.
 #[inline(always)]
 #[allow(clippy::mut_from_ref)]
 unsafe fn sw3_entries_mut() -> &'static mut [SW3SyscallEntry; SW3_MAX_ENTRIES] {
-    // SAFETY: exclusive mutation is serialized by the `init_started` CAS gate;
-    // readers only touch entries after loading `count` with `Acquire`.
-    &mut *(&raw const SW3_SYSCALL_LIST.entries as *mut [SW3SyscallEntry; SW3_MAX_ENTRIES])
+    // SAFETY: caller holds the single-writer Init gate, before count publication.
+    unsafe { &mut *SW3_SYSCALL_LIST.entries.get() }
+}
+
+/// Caller must have acquired a nonzero published count before reading entries.
+#[inline(always)]
+unsafe fn sw3_entries() -> &'static [SW3SyscallEntry; SW3_MAX_ENTRIES] {
+    // SAFETY: the mutable borrow ended before Release publication and no
+    // further writer is admitted. UnsafeCell permits the prior initialization.
+    unsafe { &*SW3_SYSCALL_LIST.entries.get() }
 }
 
 // =============================================================================
@@ -1051,44 +1061,21 @@ unsafe fn sw3_find_syscall_address(nt_api_address: PVOID) -> PVOID {
 /// Populate syscall list from ntdll exports
 /// This parses the PEB to find ntdll and extracts all Zw* functions
 unsafe fn sw3_populate_syscall_list() -> bool {
-    use core::sync::atomic::Ordering;
+    SW3_SYSCALL_LIST
+        .init
+        .get_or_init(|| unsafe { sw3_walk_syscall_list() })
+}
 
-    // Fast path: already populated. Acquire pairs with the Release store below,
-    // so anyone that observes count > 0 sees fully-initialized entries.
-    if SW3_SYSCALL_LIST.count.load(Ordering::Acquire) > 0 {
-        return true;
-    }
-
-    // Serialize concurrent initializers: winner runs the walk, losers spin
-    // until the winner publishes `count` with Release.
-    if SW3_SYSCALL_LIST
-        .init_started
-        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-        .is_err()
-    {
-        while SW3_SYSCALL_LIST.count.load(Ordering::Acquire) == 0 {
-            core::hint::spin_loop();
-        }
-        return true;
-    }
-
-    // Failure path: return the init gate so a later caller can retry.
-    let release_gate_on_failure = || {
-        SW3_SYSCALL_LIST
-            .init_started
-            .store(false, Ordering::Release);
-    };
-
+/// The exclusive initializer owns the table until its count is published.
+unsafe fn sw3_walk_syscall_list() -> Option<u32> {
     let peb = sw3_get_peb();
     if peb.is_null() {
-        release_gate_on_failure();
-        return false;
+        return None;
     }
 
     let ldr = (*peb).ldr;
     if ldr.is_null() {
-        release_gate_on_failure();
-        return false;
+        return None;
     }
 
     // Walk the module list to find ntdll
@@ -1135,7 +1122,9 @@ unsafe fn sw3_populate_syscall_list() -> bool {
         let dll_name = (dll_base as *const u8).add((*export_dir).name as usize);
 
         // Check for "ntdll" (case insensitive)
-        let name_check = *(dll_name as *const u32) | 0x20202020;
+        // SAFETY: an export DLL name is a NUL-terminated byte string, not
+        // necessarily u32-aligned (including the real 32-bit ntdll).
+        let name_check = unsafe { core::ptr::read_unaligned(dll_name as *const u32) } | 0x20202020;
         if name_check != 0x6C64746E {
             // "ntdl"
             current = (*current).flink;
@@ -1185,14 +1174,11 @@ unsafe fn sw3_populate_syscall_list() -> bool {
         // export order (this is what SysWhispers3 hard-codes).
         entries[..count as usize].sort_unstable_by_key(|e| e.address);
 
-        // Release: pairs with the Acquire loads in readers. Every entry
-        // written above becomes visible before any observer sees count > 0.
-        SW3_SYSCALL_LIST.count.store(count, Ordering::Release);
-        return true;
+        // The Init owner publishes only after this exclusive borrow ends.
+        return Some(count);
     }
 
-    release_gate_on_failure();
-    false
+    None
 }
 
 /// Get syscall number by function hash
@@ -1204,10 +1190,11 @@ pub unsafe fn sw3_get_syscall_number(function_hash: u32) -> u32 {
     }
 
     let count = SW3_SYSCALL_LIST
+        .init
         .count
         .load(core::sync::atomic::Ordering::Acquire) as usize;
     for i in 0..count {
-        if SW3_SYSCALL_LIST.entries[i].hash == function_hash {
+        if sw3_entries()[i].hash == function_hash {
             return i as u32;
         }
     }
@@ -1220,6 +1207,7 @@ pub unsafe fn sw3_get_syscall_number(function_hash: u32) -> u32 {
 pub unsafe fn sw3_debug_get_count() -> u32 {
     sw3_populate_syscall_list();
     SW3_SYSCALL_LIST
+        .init
         .count
         .load(core::sync::atomic::Ordering::Acquire)
 }
@@ -1228,10 +1216,11 @@ pub unsafe fn sw3_debug_get_count() -> u32 {
 #[inline(never)]
 pub unsafe fn sw3_debug_get_hash(index: usize) -> u32 {
     let count = SW3_SYSCALL_LIST
+        .init
         .count
         .load(core::sync::atomic::Ordering::Acquire) as usize;
     if index < count {
-        SW3_SYSCALL_LIST.entries[index].hash
+        sw3_entries()[index].hash
     } else {
         0
     }
@@ -1241,10 +1230,11 @@ pub unsafe fn sw3_debug_get_hash(index: usize) -> u32 {
 #[inline(never)]
 pub unsafe fn sw3_debug_get_syscall_addr(index: usize) -> PVOID {
     let count = SW3_SYSCALL_LIST
+        .init
         .count
         .load(core::sync::atomic::Ordering::Acquire) as usize;
     if index < count {
-        SW3_SYSCALL_LIST.entries[index].syscall_address as PVOID
+        sw3_entries()[index].syscall_address as PVOID
     } else {
         core::ptr::null_mut()
     }
@@ -1258,11 +1248,12 @@ pub unsafe fn sw3_get_syscall_address(function_hash: u32) -> PVOID {
     }
 
     let count = SW3_SYSCALL_LIST
+        .init
         .count
         .load(core::sync::atomic::Ordering::Acquire) as usize;
     for i in 0..count {
-        if SW3_SYSCALL_LIST.entries[i].hash == function_hash {
-            let addr = SW3_SYSCALL_LIST.entries[i].syscall_address;
+        if sw3_entries()[i].hash == function_hash {
+            let addr = sw3_entries()[i].syscall_address;
             if addr != 0 {
                 return addr as PVOID;
             }
@@ -1273,7 +1264,7 @@ pub unsafe fn sw3_get_syscall_address(function_hash: u32) -> PVOID {
 
     // Fallback: find any valid syscall address
     for i in 0..count {
-        let addr = SW3_SYSCALL_LIST.entries[i].syscall_address;
+        let addr = sw3_entries()[i].syscall_address;
         if addr != 0 {
             return addr as PVOID;
         }
@@ -1291,6 +1282,7 @@ pub unsafe fn sw3_get_random_syscall_address(function_hash: u32) -> PVOID {
     }
 
     let count = SW3_SYSCALL_LIST
+        .init
         .count
         .load(core::sync::atomic::Ordering::Acquire);
     if count == 0 {
@@ -1303,15 +1295,14 @@ pub unsafe fn sw3_get_random_syscall_address(function_hash: u32) -> PVOID {
 
     // Make sure we don't return our own syscall address and that it's valid
     let mut attempts = 0;
-    while (SW3_SYSCALL_LIST.entries[index].hash == function_hash
-        || SW3_SYSCALL_LIST.entries[index].syscall_address == 0)
+    while (sw3_entries()[index].hash == function_hash || sw3_entries()[index].syscall_address == 0)
         && attempts < count
     {
         index = (index + 1) % count_usize;
         attempts += 1;
     }
 
-    SW3_SYSCALL_LIST.entries[index].syscall_address as PVOID
+    sw3_entries()[index].syscall_address as PVOID
 }
 
 // =============================================================================

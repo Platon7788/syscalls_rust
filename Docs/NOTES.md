@@ -1,5 +1,9 @@
 # Заметки и наблюдения syscalls-rust
 
+- [2026-10-08] Authoritative init contract теперь в ARCHITECTURE/PROGRESS: terminal Failed, single-writer UnsafeCell и nonempty/nonfull publication. Исторические записи ниже про static-mut race не описывают текущую реализацию. Сам зависший native call всё ещё непрерываем; SDK budgets ограничивают caller wait.
+- [2026-10-08] xhook ранее вручную усилил generated cap guard. При регенерации проверять source diff, не заменять local safety fixes вслепую; guard перенесён в emitter. Это проверка source parity, не downstream deployment.
+- [2026-10-08] Различать normal xhook static build и optional /WX/install configurations: vendor HDE warning C4701 и export-set install issue не относятся к исправлению native init и не объявляются исправленными.
+
 - [2026-10-06] Rust 1.99.0 закреплён; единственная registry-зависимость генератора — regex 1.13.1. Runtime syscalls не требует registry-пакетов.
 
 

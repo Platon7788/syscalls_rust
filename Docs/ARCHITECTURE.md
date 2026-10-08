@@ -137,6 +137,21 @@ WoW64 gate → fs:[0xC0] (Wow64SystemServiceCall)
 
 ## Потокобезопасность
 
-- `SW3_SYSCALL_LIST` -- `static mut`, инициализация не thread-safe
-- На практике безопасно: таблица заполняется одинаково при любом вызове
-- Гонка при первом вызове из нескольких потоков -- результат идемпотентен
+- Один CAS winner заполняет таблицу. Rust `init::Init` имеет состояния Uninitialized / Initializing / Ready / Failed; C использует существующий Count sentinel `-1` для отказа.
+- Ready требует `0 < count < SW3_MAX_ENTRIES`. Пустая или достигшая cap таблица не публикуется: усечённый набор экспортов после сортировки может назначить неверные syscall IDs.
+- Rust entries хранятся в UnsafeCell. Unique mutable borrow заканчивается до Release публикации; все readers получают Acquire nonzero count перед immutable доступом. Обоснование unsafe Sync находится рядом с private SW3SyscallList.
+- Failed терминален до завершения процесса: ожидающие и будущие callers получают failure, count Rust остаётся нулём. Повторной записи/PEB walk нет. Сам зависший native initializer эта схема не прерывает.
+- Export DLL name — byte string без гарантии u32 alignment: Rust читает read_unaligned, C собирает четыре байта явно. Это существенно для настоящей 32-bit ntdll.
+- C publication/read helpers используют interlocked operations; debug count при failure равен нулю, size_t index проверяется только против положительного published count.
+
+## Regression checks
+
+`cargo test --workspace` и `cargo test --workspace --target i686-pc-windows-msvc` проверяют concurrent failure/empty/full table, single publication и реальную Windows таблицу/readonly NtQuerySystemTime. Fault seam использует отдельный gate, не меняет PEB/OS. Старый faulty waiter имеет ограниченный test-only cleanup без доступа к entries.
+
+После генерации `cargo run -p syscalls-standalone --bin syscalls-standalone -- --out <bundle>`:
+
+```powershell
+./tests/verify-standalone-init.ps1 -BundleDir <bundle> -OutputDir <temporary-output>
+```
+
+Скрипт компилирует emitted private publisher на MSVC x64/x86 с `/W4 /WX` и проверяет empty/full failure, всех waiters, bounds/debug count и реальный PEB walk. Генерируемые public signatures, hash seed и ASM не изменены.

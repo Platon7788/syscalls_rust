@@ -60,8 +60,8 @@ typedef struct {
 
 /* Count encoding:
  *    0                  -- uninitialized
- *    1 .. X_MAX_ENTRIES -- published; that many valid entries
- *    (long)-1           -- init attempted and failed (ntdll not found)
+ *    1 .. X_MAX_ENTRIES-1 -- published; that many valid entries
+ *    (long)-1           -- init attempted and failed (missing/empty table)
  */
 #define X_COUNT_FAILED ((long)-1)
 
@@ -196,10 +196,22 @@ static void* X_FindSyscallAddress(void *nt_api_address) {
     return 0;
 }
 
+/* A full reverse export walk can be truncated: its sorted subset would
+ * assign incorrect syscall IDs. Never publish an empty or full table.
+ * One completion publisher, also exercised by the isolated fault test. */
+static int X_PublishCount(long count) {
+    if (count <= 0 || (unsigned long)count >= X_MAX_ENTRIES) {
+        X_XCHG(&X_SyscallList.Count, X_COUNT_FAILED);
+        return 0;
+    }
+    X_XCHG(&X_SyscallList.Count, count);
+    return 1;
+}
+
 static int X_PopulateSyscallList(void) {
     /* Fast path: publication already happened. */
     {
-        long snap = X_SyscallList.Count;
+        long snap = X_CAS(&X_SyscallList.Count, 0, 0);
         if (snap > 0) return 1;
         if (snap == X_COUNT_FAILED) return 0;
     }
@@ -207,7 +219,7 @@ static int X_PopulateSyscallList(void) {
     /* Serialise initialisers -- winner walks ntdll, losers spin on Count. */
     if (X_CAS(&X_SyscallList.InitStarted, 1, 0) != 0) {
         for (;;) {
-            long c = X_SyscallList.Count;
+            long c = X_CAS(&X_SyscallList.Count, 0, 0);
             if (c > 0) return 1;
             if (c == X_COUNT_FAILED) return 0;
             X_PAUSE();
@@ -249,7 +261,9 @@ static int X_PopulateSyscallList(void) {
         uint8_t *dll_name = (uint8_t*)dll_base + exp->Name;
 
         /* Case-insensitive check for "ntdll" (four low bytes). */
-        uint32_t name_check = (*(uint32_t*)dll_name) | 0x20202020u;
+        /* Export names are byte strings, not necessarily uint32_t-aligned. */
+        uint32_t name_check = ((uint32_t)dll_name[0] | ((uint32_t)dll_name[1] << 8)
+                            | ((uint32_t)dll_name[2] << 16) | ((uint32_t)dll_name[3] << 24)) | 0x20202020u;
         if (name_check != 0x6C64746Eu) { cur = cur->Flink; continue; }
 
         /* Found ntdll -- enumerate Zw* exports (backwards, matches SW3 C). */
@@ -300,8 +314,7 @@ static int X_PopulateSyscallList(void) {
 
         /* Publish: any thread seeing Count>0 sees fully-initialised entries
          * AND the retaddr-spoofing gadget. */
-        X_XCHG(&X_SyscallList.Count, (long)count);
-        return 1;
+        return X_PublishCount((long)count);
     }
 
     /* ntdll not found on the module list -- mark as failed, wake spinners. */
@@ -313,7 +326,7 @@ static int X_PopulateSyscallList(void) {
 
 uint32_t X_GetSyscallNumber(uint32_t function_hash) {
     if (!X_PopulateSyscallList()) return 0xFFFFFFFFu;
-    long count = X_SyscallList.Count;
+    long count = X_CAS(&X_SyscallList.Count, 0, 0);
     for (long i = 0; i < count; ++i) {
         if (X_SyscallList.Entries[i].Hash == function_hash) {
             return (uint32_t)i;
@@ -324,7 +337,7 @@ uint32_t X_GetSyscallNumber(uint32_t function_hash) {
 
 void* X_GetSyscallAddress(uint32_t function_hash) {
     if (!X_PopulateSyscallList()) return 0;
-    long count = X_SyscallList.Count;
+    long count = X_CAS(&X_SyscallList.Count, 0, 0);
     for (long i = 0; i < count; ++i) {
         if (X_SyscallList.Entries[i].Hash == function_hash) {
             void *addr = X_SyscallList.Entries[i].SyscallAddress;
@@ -342,7 +355,7 @@ void* X_GetSyscallAddress(uint32_t function_hash) {
 
 void* X_GetRandomSyscallAddress(uint32_t function_hash) {
     if (!X_PopulateSyscallList()) return 0;
-    long count = X_SyscallList.Count;
+    long count = X_CAS(&X_SyscallList.Count, 0, 0);
     if (count == 0) return 0;
 
     long index = (long)(function_hash % (uint32_t)count);
@@ -357,19 +370,21 @@ void* X_GetRandomSyscallAddress(uint32_t function_hash) {
 }
 
 uint32_t X_DebugGetCount(void) {
-    X_PopulateSyscallList();
-    return (uint32_t)X_SyscallList.Count;
+    if (!X_PopulateSyscallList()) return 0;
+    return (uint32_t)X_CAS(&X_SyscallList.Count, 0, 0);
 }
 
 uint32_t X_DebugGetHash(size_t index) {
-    if ((long)index < X_SyscallList.Count) {
+    long count = X_CAS(&X_SyscallList.Count, 0, 0);
+    if (count > 0 && index < (size_t)count) {
         return X_SyscallList.Entries[index].Hash;
     }
     return 0;
 }
 
 void* X_DebugGetSyscallAddr(size_t index) {
-    if ((long)index < X_SyscallList.Count) {
+    long count = X_CAS(&X_SyscallList.Count, 0, 0);
+    if (count > 0 && index < (size_t)count) {
         return X_SyscallList.Entries[index].SyscallAddress;
     }
     return 0;

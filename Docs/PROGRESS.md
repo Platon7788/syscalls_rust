@@ -1,5 +1,15 @@
 # Журнал прогресса syscalls-rust
 
+## 2026-10-08 — SDK audit ExternalX01: native init failure
+
+- Старый Rust gate сохранял спин ожидающих после failure; пустая таблица считалась success. Наблюдаемый RED: 2 fault теста; full-cap table отдельно RED. Теперь Failed терминален для всех caller, Ready только при `0 < count < cap`.
+- UnsafeCell оформляет законную interior mutability таблицы; один writer, Release/Acquire publication. Изменения ограничены runtime/init и C emitter; public signatures/513 hashes/ASM не менялись.
+- Настоящий x86 тест выявил и исправил невыровненное чтение export DLL name. WoW64 uses FS gate и не требует native sysenter gadget; тест проверяет реальный read-only NtQuerySystemTime, а не неверный nullable-gadget oracle.
+- Проверено: 9 tests PASS на x64 и x86, fmt, strict Clippy обоих targets, release обоих targets, debug-feature build, 513 unique hash audit. Один прежний ignored usage doctest не изменялся.
+- Regenerated emitted C: MSVC `/W4 /WX`, x64/x86; по три исполняемых oracle (empty/full table + actual Windows table), все PASS. Текущая Windows: 489/509 entries. Никакой OS corruption/resource exhaustion.
+- Isolated xhook verification at 14bc2bbe: regenerated bundle build Debug/Release x64/Win32 PASS, static/default warning policy, install OFF. Его прежний fail-closed cap guard перенесён в common publisher, регенерация его не теряет. Consumer README preserved, header/stubs неизменны. xhook source/main не изменён и не опубликован.
+- Ограничение проверок xhook: optional strict /WX выявляет прежний vendor HDE C4701; static INSTALL=ON export-set configure issue также вне runtime change. Проверка bundle build не утверждает успешную установку пакета или исправление всего xhook.
+
 ## 2026-10-06 — Rust 1.99 и зависимости
 
 - Toolchain 1.99.0, MSRV 1.99 в обоих манифестах; regex 1.13.1.
