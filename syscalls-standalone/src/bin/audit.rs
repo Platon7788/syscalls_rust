@@ -11,12 +11,21 @@ use std::path::PathBuf;
 mod parse;
 
 fn main() {
-    let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let manifest = env!("CARGO_MANIFEST_DIR");
     let lib = PathBuf::from(&manifest).join("..").join("lib.rs");
     let content = std::fs::read_to_string(&lib).expect("read lib.rs");
-    let parsed = parse::parse(&content);
+    let parsed = match parse::parse(&content) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            eprintln!("error: {}:{error}", lib.display());
+            std::process::exit(2);
+        }
+    };
 
     let mut buckets: HashMap<u32, Vec<String>> = HashMap::new();
+    for notice in &parsed.notices {
+        eprintln!("warning: {}:{notice}", lib.display());
+    }
     for f in &parsed.functions {
         buckets.entry(f.zw_hash).or_default().push(f.pascal.clone());
     }

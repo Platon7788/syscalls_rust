@@ -4,7 +4,7 @@
 //! the bundle drops into a project that already includes the Windows SDK.
 
 use crate::parse::{Function, Parsed, rust_to_c_type};
-use std::collections::HashSet;
+
 use std::fmt::Write as _;
 
 pub fn emit(p: &Parsed) -> String {
@@ -13,7 +13,7 @@ pub fn emit(p: &Parsed) -> String {
     preamble(&mut h);
     forward_struct_decls(&mut h, p);
     type_aliases(&mut h, p);
-    opaque_stubs(&mut h, p);
+
     struct_bodies(&mut h, p);
     constants(&mut h, p);
     runtime_helpers(&mut h);
@@ -45,6 +45,7 @@ fn preamble(h: &mut String) {
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 
 /* Calling convention for NT syscall stubs:
  * on x86 the syscall wrappers exposed by ntdll are __stdcall (callee cleans);
@@ -84,85 +85,6 @@ fn type_aliases(h: &mut String, p: &Parsed) {
     h.push('\n');
 }
 
-/// Emit `typedef void* X_FOO;` for every parameter/return type that was
-/// referenced but never defined as a `pub type`, `pub struct`, or primitive.
-/// Covers opaque routines like `PWNF_DELIVERY_DESCRIPTOR` that appear only in
-/// signatures.
-fn opaque_stubs(h: &mut String, p: &Parsed) {
-    let mut defined: HashSet<String> = HashSet::new();
-    for (n, _) in &p.types {
-        defined.insert(n.clone());
-    }
-    for (n, _) in &p.structs {
-        defined.insert(n.clone());
-    }
-    for (n, _, _) in &p.constants {
-        defined.insert(n.clone());
-    }
-
-    let primitives: HashSet<&str> = [
-        "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "usize", "isize", "bool", "c_void",
-        // Rust type-syntax keywords that leak out of the identifier scan.
-        "mut", "const", "dyn", "impl", "Option", "core", "ffi",
-    ]
-    .into_iter()
-    .collect();
-
-    let mut opaque: Vec<String> = Vec::new();
-    let mut seen: HashSet<String> = HashSet::new();
-
-    for f in &p.functions {
-        for t in std::iter::once(&f.return_type).chain(f.params.iter().map(|p| &p.typ)) {
-            for id in extract_identifiers(t) {
-                if primitives.contains(id.as_str()) {
-                    continue;
-                }
-                if defined.contains(&id) {
-                    continue;
-                }
-                if seen.insert(id.clone()) {
-                    opaque.push(id);
-                }
-            }
-        }
-    }
-
-    if !opaque.is_empty() {
-        h.push_str("/* ==================== Opaque pointer types ==================== */\n\n");
-        opaque.sort();
-        for id in opaque {
-            writeln!(h, "typedef void* X_{};", id).unwrap();
-        }
-        h.push('\n');
-    }
-}
-
-fn extract_identifiers(t: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut cur = String::new();
-    for ch in t.chars() {
-        if ch.is_alphanumeric() || ch == '_' {
-            cur.push(ch);
-        } else {
-            flush_ident(&mut cur, &mut out);
-        }
-    }
-    flush_ident(&mut cur, &mut out);
-    out
-}
-
-fn flush_ident(cur: &mut String, out: &mut Vec<String>) {
-    if cur.is_empty() {
-        return;
-    }
-    let is_ident = cur.chars().next().unwrap().is_alphabetic() || cur.starts_with('_');
-    if is_ident {
-        out.push(std::mem::take(cur));
-    } else {
-        cur.clear();
-    }
-}
-
 fn struct_bodies(h: &mut String, p: &Parsed) {
     h.push_str("/* ==================== Struct definitions ==================== */\n\n");
     for (name, fields) in &p.structs {
@@ -170,13 +92,21 @@ fn struct_bodies(h: &mut String, p: &Parsed) {
         if fields.is_empty() {
             writeln!(h, "    uint32_t X_reserved;").unwrap();
         } else {
-            for (fname, ftype) in fields {
+            for field in fields {
+                let fname = &field.name;
+                let ftype = &field.typ;
+                if let Some(condition) = field.condition {
+                    writeln!(h, "#if {}", condition).unwrap();
+                }
                 if let Some((elem, count)) = parse_array(ftype) {
                     let c = rust_to_c_type(&elem);
                     writeln!(h, "    {} {}[{}];", c, fname, count).unwrap();
                 } else {
                     let c = rust_to_c_type(ftype);
                     writeln!(h, "    {} {};", c, fname).unwrap();
+                }
+                if field.condition.is_some() {
+                    writeln!(h, "#endif").unwrap();
                 }
             }
         }
@@ -197,33 +127,9 @@ fn parse_array(t: &str) -> Option<(String, String)> {
 fn constants(h: &mut String, p: &Parsed) {
     h.push_str("/* ==================== Constants (#define) ==================== */\n\n");
     for (name, _typ, value) in &p.constants {
-        writeln!(h, "#define X_{} {}", name, normalize_literal(value)).unwrap();
+        writeln!(h, "#define X_{} {}", name, value).unwrap();
     }
     h.push('\n');
-}
-
-/// Convert a Rust literal expression into a C literal expression.
-///
-/// Handles the two idioms actually used in lib.rs:
-///   * `0x1234u32` -> `0x1234`
-///   * `0xC0000001u32 as i32` -> `(int32_t)0xC0000001`
-fn normalize_literal(v: &str) -> String {
-    let v = v.trim();
-    // "<hex>u32 as i32"
-    let cast_re = regex::Regex::new(r"^0x([0-9A-Fa-f]+)u32\s+as\s+i32$").unwrap();
-    if let Some(c) = cast_re.captures(v) {
-        return format!("(int32_t)0x{}", &c[1]);
-    }
-    // Strip integer type suffixes.
-    let suffix_re = regex::Regex::new(r"(u|i)(8|16|32|64|size)$").unwrap();
-    let mut cleaned = v.to_string();
-    for suf in [
-        "u8", "u16", "u32", "u64", "usize", "i8", "i16", "i32", "i64", "isize",
-    ] {
-        cleaned = cleaned.replace(suf, "");
-    }
-    let _ = suffix_re; // used to shape allowed suffixes; kept for clarity
-    cleaned
 }
 
 fn runtime_helpers(h: &mut String) {
@@ -294,4 +200,52 @@ fn footer(h: &mut String) {
 #endif /* X_SYSCALLS_H */
 "#,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn memory_information_preserves_architecture_condition() {
+        let parsed = crate::parse::parse(include_str!("../../lib.rs")).unwrap();
+        let header = emit(&parsed);
+        assert!(header.contains(
+            "#if defined(_M_X64) || defined(__x86_64__)\n    X_USHORT PartitionId;\n#endif\n    X_SIZE_T RegionSize;"
+        ));
+    }
+
+    #[test]
+    fn conditional_arrays_and_unconditional_fields_are_preserved() {
+        let parsed = crate::parse::parse(
+            r#"
+            #[repr(C)]
+            pub struct Example {
+                pub common: u32,
+                #[cfg(target_arch = "x86")]
+                pub words: [u16; 2],
+                pub tail: u8,
+            }
+        "#,
+        )
+        .unwrap();
+        let header = emit(&parsed);
+        assert!(header.contains("    uint32_t common;\n#if defined(_M_IX86) || defined(__i386__)\n    uint16_t words[2];\n#endif\n    uint8_t tail;"));
+    }
+
+    #[test]
+    fn unsupported_field_condition_is_not_silently_erased() {
+        let result = crate::parse::parse(
+            r#"
+            #[repr(C)]
+            pub struct Example {
+                #[cfg(feature = "optional")]
+                pub value: u32,
+            }
+        "#,
+        );
+        assert!(
+            matches!(result, Err(error) if error.contains("unsupported attributes on field Example.value"))
+        );
+    }
 }

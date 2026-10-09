@@ -20,7 +20,7 @@ syscalls-rust/
 │   ├── Cargo.toml
 │   └── src/
 │       ├── main.rs               # CLI (--out <dir> [--lib <lib.rs>])
-│       ├── parse.rs              # regex-парсер lib.rs + ROR8 hash
+│       ├── parse.rs              # syn AST-парсер lib.rs + ROR8 hash
 │       ├── emit_h.rs             # syscalls.h emit (X-prefix)
 │       ├── emit_c.rs             # syscalls.c emit (CRT-free runtime)
 │       ├── emit_asm_x64.rs       # syscallsstubs.x64.asm emit (MASM + RAS)
@@ -64,7 +64,7 @@ error.rs
 ### Standalone bundle generator (syscalls-standalone)
 
 ```
-syscalls-standalone/src/         Парсит lib.rs (regex) и эмитит:
+syscalls-standalone/src/         Парсит lib.rs (syn AST) и эмитит:
 ├── parse.rs                     - Function/Param/Parsed структуры + ROR8 hash
 ├── emit_h.rs                    → syscalls.h (X-prefix типы, decls, macros)
 ├── emit_c.rs                    → syscalls.c (CRT-free runtime + PEB walk +

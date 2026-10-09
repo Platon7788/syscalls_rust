@@ -1,5 +1,7 @@
 # Заметки и наблюдения syscalls-rust
 
+- [2026-10-09] По решению владельца проверки выполняются только локально: `./tests/verify-quality.ps1 -Offline`. GitHub Actions workflow не публикуется. Скрипт проверяет генератор и заголовок; он не подтверждает корректность runtime/syscall ABI.
+
 - [2026-10-08] Authoritative init contract теперь в ARCHITECTURE/PROGRESS: terminal Failed, single-writer UnsafeCell и nonempty/nonfull publication. Исторические записи ниже про static-mut race не описывают текущую реализацию. Сам зависший native call всё ещё непрерываем; SDK budgets ограничивают caller wait.
 - [2026-10-08] xhook ранее вручную усилил generated cap guard. При регенерации проверять source diff, не заменять local safety fixes вслепую; guard перенесён в emitter. Это проверка source parity, не downstream deployment.
 - [2026-10-08] Различать normal xhook static build и optional /WX/install configurations: vendor HDE warning C4701 и export-set install issue не относятся к исправлению native init и не объявляются исправленными.
@@ -65,6 +67,22 @@
 - [2026-07-28] **RAS (Return-Address Spoofing) активирован на x64**: перед `jmp r11` стабы кладут `X_NtdllRetGadget` в `[rsp]`, реальный user_ret_addr сохраняется под ним. Double-ret через ntdll `ret` gadget возвращает управление user-коду. Kernel-side stack walk (ETW-Ti, PsSetCreateProcessNotifyRoutine) видит caller = ntdll, не xhook.dll.
 - [2026-07-28] Критичный момент RAS: `sub rsp, 8` для gadget-слота сдвигает kernel-view args 5..N на 8 байт. Компенсируется per-stub копированием (генератор эмитит `mov r10, [rsp+src]; mov [rsp+dst], r10` для N-4 слотов). Использование R10 как scratch безопасно (перезаписывается на `mov r10, rcx` для NT ABI перед jmp).
 - [2026-07-28] Init: sentinel `X_COUNT_FAILED (-1)` в Count -- fix для deadlock'а спинящихся losers при init-failure winner'а. Аналогичный фикс сделан и в Rust runtime lib.rs.
+
+## Проверки диагностики и деклараций (2026-10-09)
+
+- Актуальное восстановление: `cargo run -p syscalls-standalone -- --recover <out>`. `.syscalls-writer.lock` — постоянный файл OS-блокировки, `.syscalls-write-lock` — staging с manifest/snapshots. Не удалять lock во время writer/recovery. Предыдущие записи об исключительно ручном восстановлении относятся к старому формату; legacy staging новый recover сохраняет для ручной проверки.
+- Полный локальный header gate: `tests/verify-header-layout.ps1` теперь строит Rust layout contracts обоих targets и компилирует заголовок как C11 и C++20. SDK покрывает 12 структур, Rust comparison — все 26 текущих экспортируемых структур.
+
+- После AST-разбора выполняется отдельная проверка `validate.rs`. Неизвестные типы больше не превращаются в opaque pointers автоматически. Для custom --lib это намеренное ужесточение: требуется явный alias либо исправление опечатки. Макросы/внешние модули по-прежнему не раскрываются.
+
+- Regex-парсер заменён syn AST (`syscalls-standalone/src/ast.rs`). Разбираются top-level объявления; макросы и внешние модули не раскрываются, разрешение типов компилятором не выполняется. Поддерживаемые константы: целые литералы, cast, ссылки на константы и скобки. Callback-типы сохраняют прежнее opaque C-представление.
+
+- CLI/файловая публикация: правила входа, staging/rollback и восстановление после прерывания описаны в `syscalls-standalone/README.md`. Откат тестируется с внедрённой ошибкой; атомарность при падении процесса не гарантируется. Ошибки атрибутов теперь возвращаются через Result вместо panic.
+
+- `tests/ntstatus-names.txt` фиксирует соответствия из Windows SDK 10.0.28000.0. Существующие canonical display aliases STATUS_SUCCESS и STATUS_ABANDONED сохранены.
+- Проверка layout: `cargo run -p syscalls-standalone -- --out target/quality-bundle`, затем `./tests/verify-header-layout.ps1 -BundleDir target/quality-bundle -OutputDir target/quality-layout`.
+- Проверка компилирует только C-заголовок с SDK для x64/x86. Она не подтверждает корректность syscall-обёрток и не запускает их.
+- Парсер полей поддерживает только отсутствие атрибутов либо один `cfg(target_arch = "x86"/"x86_64")`; сложные cfg требуют отдельной реализации, а не удаления условия.
 
 ## Отложенные улучшения bundle (не в scope этой сессии)
 - **Signature diversification** (~2ч): рандомизация NOP-sled'ов и перестановка `push`/`mov` порядка в стабах. Сейчас все 513 стабов -- один скелет с разными hash-константами, легко подписывается AV. Emit-time инъекция junk-instructions решает.

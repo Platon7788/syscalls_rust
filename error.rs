@@ -83,22 +83,22 @@ impl NtStatus {
             0x00000106 => "STATUS_NOT_ALL_ASSIGNED",
             0x00000107 => "STATUS_SOME_NOT_MAPPED",
             0x00000108 => "STATUS_OPLOCK_BREAK_IN_PROGRESS",
-            0x0000010A => "STATUS_NOTIFY_CLEANUP",
-            0x0000010B => "STATUS_NOTIFY_ENUM_DIR",
-            0x0000010C => "STATUS_NO_QUOTAS_FOR_ACCOUNT",
+            0x0000010B => "STATUS_NOTIFY_CLEANUP",
+            0x0000010C => "STATUS_NOTIFY_ENUM_DIR",
+            0x0000010D => "STATUS_NO_QUOTAS_FOR_ACCOUNT",
 
             // Information codes (0x40xxxxxx)
             0x40000000 => "STATUS_OBJECT_NAME_EXISTS",
             0x40000001 => "STATUS_THREAD_WAS_SUSPENDED",
             0x40000002 => "STATUS_WORKING_SET_LIMIT_RANGE",
             0x40000003 => "STATUS_IMAGE_NOT_AT_BASE",
-            0x40000005 => "STATUS_RXACT_STATE_CREATED",
-            0x40000006 => "STATUS_SEGMENT_NOTIFICATION",
-            0x40000015 => "STATUS_RECEIVE_PARTIAL",
-            0x40000016 => "STATUS_RECEIVE_EXPEDITED",
-            0x40000017 => "STATUS_RECEIVE_PARTIAL_EXPEDITED",
-            0x40000018 => "STATUS_EVENT_DONE",
-            0x40000019 => "STATUS_EVENT_PENDING",
+            0x40000004 => "STATUS_RXACT_STATE_CREATED",
+            0x40000005 => "STATUS_SEGMENT_NOTIFICATION",
+            0x4000000F => "STATUS_RECEIVE_PARTIAL",
+            0x40000010 => "STATUS_RECEIVE_EXPEDITED",
+            0x40000011 => "STATUS_RECEIVE_PARTIAL_EXPEDITED",
+            0x40000012 => "STATUS_EVENT_DONE",
+            0x40000013 => "STATUS_EVENT_PENDING",
 
             // Warning codes (0x80xxxxxx)
             0x80000001 => "STATUS_GUARD_PAGE_VIOLATION",
@@ -111,7 +111,7 @@ impl NtStatus {
             0x8000000B => "STATUS_NO_INHERITANCE",
             0x8000000D => "STATUS_PARTIAL_COPY",
             0x8000001A => "STATUS_NO_MORE_ENTRIES",
-            0x80000288 => "STATUS_DEVICE_BUSY",
+            0x80000011 => "STATUS_DEVICE_BUSY",
 
             // Error codes (0xC0xxxxxx)
             0xC0000001 => "STATUS_UNSUCCESSFUL",
@@ -183,12 +183,12 @@ impl NtStatus {
             0xC000004C => "STATUS_BAD_WORKING_SET_LIMIT",
             0xC000004D => "STATUS_INCOMPATIBLE_FILE_MAP",
             0xC000004E => "STATUS_SECTION_PROTECTION",
-            0xC0000050 => "STATUS_FILE_LOCK_CONFLICT",
-            0xC0000051 => "STATUS_LOCK_NOT_GRANTED",
-            0xC0000052 => "STATUS_DELETE_PENDING",
-            0xC0000054 => "STATUS_FILE_IS_A_DIRECTORY",
-            0xC0000055 => "STATUS_NOT_A_DIRECTORY",
-            0xC0000056 => "STATUS_PROCESS_IS_TERMINATING",
+            0xC0000054 => "STATUS_FILE_LOCK_CONFLICT",
+            0xC0000055 => "STATUS_LOCK_NOT_GRANTED",
+            0xC0000056 => "STATUS_DELETE_PENDING",
+            0xC00000BA => "STATUS_FILE_IS_A_DIRECTORY",
+            0xC0000103 => "STATUS_NOT_A_DIRECTORY",
+            0xC000010A => "STATUS_PROCESS_IS_TERMINATING",
             0xC0000061 => "STATUS_PRIVILEGE_NOT_HELD",
             0xC0000062 => "STATUS_INVALID_ACCOUNT_NAME",
             0xC0000063 => "STATUS_USER_EXISTS",
@@ -230,10 +230,10 @@ impl NtStatus {
             0xC000009C => "STATUS_DEVICE_DATA_ERROR",
             0xC000009D => "STATUS_DEVICE_NOT_CONNECTED",
             0xC00000A2 => "STATUS_MEDIA_WRITE_PROTECTED",
-            0xC00000A3 => "STATUS_BAD_IMPERSONATION_LEVEL",
-            0xC00000A4 => "STATUS_CANT_OPEN_ANONYMOUS",
-            0xC00000A5 => "STATUS_BAD_VALIDATION_CLASS",
-            0xC00000A6 => "STATUS_BAD_TOKEN_TYPE",
+            0xC00000A5 => "STATUS_BAD_IMPERSONATION_LEVEL",
+            0xC00000A6 => "STATUS_CANT_OPEN_ANONYMOUS",
+            0xC00000A7 => "STATUS_BAD_VALIDATION_CLASS",
+            0xC00000A8 => "STATUS_BAD_TOKEN_TYPE",
             0xC00000AB => "STATUS_INSTANCE_NOT_AVAILABLE",
             0xC00000AC => "STATUS_PIPE_NOT_AVAILABLE",
             0xC00000AD => "STATUS_INVALID_PIPE_STATE",
@@ -245,20 +245,28 @@ impl NtStatus {
             0xC00000B3 => "STATUS_PIPE_LISTENING",
             0xC00000B4 => "STATUS_INVALID_READ_MODE",
             0xC00000B5 => "STATUS_IO_TIMEOUT",
-            0xC00000BA => "STATUS_FILE_IS_OFFLINE",
-            0xC00000BB => "STATUS_NOT_A_REPARSE_POINT",
+            0xC0000267 => "STATUS_FILE_IS_OFFLINE",
+            0xC0000275 => "STATUS_NOT_A_REPARSE_POINT",
             0xC00000E5 => "STATUS_INTERNAL_ERROR",
             0xC0000120 => "STATUS_CANCELLED",
             0xC0000121 => "STATUS_CANNOT_DELETE",
-            0xC0000128 => "STATUS_FILE_DELETED",
+            0xC0000123 => "STATUS_FILE_DELETED",
             0xC0000135 => "STATUS_DLL_NOT_FOUND",
-            0xC0000138 => "STATUS_ENTRYPOINT_NOT_FOUND",
-            0xC0000139 => "STATUS_DLL_INIT_FAILED",
-            0xC0000142 => "STATUS_DLL_INIT_FAILED_LOGOFF",
+            0xC0000139 => "STATUS_ENTRYPOINT_NOT_FOUND",
+            0xC0000142 => "STATUS_DLL_INIT_FAILED",
+            0xC000026B => "STATUS_DLL_INIT_FAILED_LOGOFF",
             0xC0000194 => "STATUS_POSSIBLE_DEADLOCK",
             0xC0000225 => "STATUS_NOT_FOUND",
             0xC000022D => "STATUS_RETRY",
-            0xC0000263 => "STATUS_USER_MAPPED_FILE",
+            0xC0000243 => "STATUS_USER_MAPPED_FILE",
+
+            0xC00000BB => "STATUS_NOT_SUPPORTED",
+            0xC00000EF => "STATUS_INVALID_PARAMETER_1",
+            0xC00000F0 => "STATUS_INVALID_PARAMETER_2",
+            0xC00000F1 => "STATUS_INVALID_PARAMETER_3",
+            0xC00000F2 => "STATUS_INVALID_PARAMETER_4",
+            0xC00000F3 => "STATUS_INVALID_PARAMETER_5",
+            0xC00000F4 => "STATUS_INVALID_PARAMETER_6",
 
             _ => "STATUS_UNKNOWN",
         }
@@ -331,6 +339,40 @@ impl NtStatusExt for i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn names_match_windows_sdk_fixture() {
+        for line in include_str!("tests/ntstatus-names.txt").lines() {
+            if line.starts_with('#') || line.is_empty() {
+                continue;
+            }
+            let (hex, expected) = line.split_once(' ').unwrap();
+            let raw = u32::from_str_radix(hex, 16).unwrap();
+            assert_eq!(NtStatus(raw as i32).name(), expected, "{hex}");
+        }
+    }
+
+    #[test]
+    fn severity_and_unknown_status_preserve_numeric_meaning() {
+        for (raw, success, information, warning, error) in [
+            (0x00000000u32, true, false, false, false),
+            (0x40000000, true, true, false, false),
+            (0x80000005, false, false, true, false),
+            (0xC0000005, false, false, false, true),
+        ] {
+            let status = NtStatus(raw as i32);
+            assert_eq!(status.is_success(), success);
+            assert_eq!(status.is_information(), information);
+            assert_eq!(status.is_warning(), warning);
+            assert_eq!(status.is_error(), error);
+            assert_eq!(status.raw().to_result().is_ok(), success);
+        }
+        let unknown = NtStatus(0xE123ABCDu32 as i32);
+        assert_eq!(unknown.name(), "STATUS_UNKNOWN");
+        assert_eq!(unknown.facility(), 0x123);
+        assert_eq!(unknown.code(), 0xABCD);
+        assert_eq!(std::format!("{unknown}"), "STATUS_UNKNOWN (0xE123ABCD)");
+    }
 
     #[test]
     fn test_status_success() {

@@ -44,7 +44,7 @@ graph TD
     LIB["lib.rs\n~58K lines · 513 syscalls\n200+ type aliases · 198 constants\n25+ structs · SW3 runtime"]
     ERR["error.rs\nNtStatus · NtResult·T·\nNtStatusExt trait"]
 
-    PARSE["parse.rs\nRegex parser\nROR8 hash"]
+    PARSE["parse.rs\nsyn AST parser\nROR8 hash"]
     EMIT_H["emit_h.rs → syscalls.h\nX-prefix types & decls"]
     EMIT_C["emit_c.rs → syscalls.c\nCRT-free runtime + PEB walk\nAtomic init + RAS gadget"]
     EMIT_ASM["emit_asm_x64.rs\n→ syscallsstubs.x64.asm\nMASM · 513 PROC\nJUMPER_RANDOMIZED + RAS"]

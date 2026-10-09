@@ -75,7 +75,7 @@
 | Компонент | Статус |
 |-----------|--------|
 | CLI (`--out <dir>`) | Готово |
-| Парсер lib.rs (regex) | Готово |
+| Парсер lib.rs (syn AST) | Готово |
 | Emit syscalls.h (X-prefix decls) | Готово |
 | Emit syscalls.c (CRT-free runtime, атомик init) | Готово |
 | Emit syscallsstubs.x64.asm (MASM + RAS) | Готово |
@@ -142,7 +142,7 @@ Terminal Failed/Ready publication, single-writer UnsafeCell, отсутстви�
 
 ## Известные проблемы
 
-- Нет CI/CD (см. `NOTES.md` -- CI regression tests для generator в отложенных)
+- Проверки выполняются локально через `tests/verify-quality.ps1`; GitHub Actions не используется по решению владельца.
 
 ## Downstream consumers (path-dep)
 

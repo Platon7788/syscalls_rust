@@ -1,7 +1,10 @@
 //! Parse lib.rs to extract types, structs, constants, and function signatures.
 //! Also provides the ROR8 hash used by the SysWhispers3 runtime.
 
-use std::collections::HashSet;
+#[path = "ast.rs"]
+mod ast;
+#[path = "validate.rs"]
+mod validate;
 
 pub const SW3_SEED: u32 = 0xB8A54425;
 
@@ -52,157 +55,31 @@ pub struct Function {
     pub zw_hash: u32,
 }
 
+pub struct Field {
+    pub name: String,
+    pub typ: String,
+    /// C preprocessor condition retained from a supported Rust field cfg.
+    pub condition: Option<&'static str>,
+}
+
 pub struct Parsed {
+    pub locations: std::collections::HashMap<String, proc_macro2::Span>,
+    pub notices: Vec<String>,
     pub types: Vec<(String, String)>,
-    pub structs: Vec<(String, Vec<(String, String)>)>,
+    pub structs: Vec<(String, Vec<Field>)>,
     pub constants: Vec<(String, String, String)>,
     pub functions: Vec<Function>,
 }
 
-pub fn parse(content: &str) -> Parsed {
-    Parsed {
-        types: extract_type_aliases(content),
-        structs: extract_structs(content),
-        constants: extract_constants(content),
-        functions: extract_functions(content),
-    }
+fn located(span: proc_macro2::Span, message: impl std::fmt::Display) -> String {
+    let start = span.start();
+    format!("{}:{}: {message}", start.line, start.column + 1)
 }
 
-fn extract_type_aliases(content: &str) -> Vec<(String, String)> {
-    let re = regex::Regex::new(r"pub type (\w+)\s*=\s*([^;]+);").unwrap();
-    re.captures_iter(content)
-        .filter_map(|c| {
-            let name = c[1].to_string();
-            // `pub type c_void = core::ffi::c_void` -> `typedef void X_c_void;` --
-            // legal C but noise: nothing references it (Rust `*mut c_void` maps
-            // straight to `void*`, not `X_c_void*`). Drop it.
-            if name == "c_void" {
-                return None;
-            }
-            Some((name, c[2].trim().to_string()))
-        })
-        .collect()
-}
-
-fn extract_constants(content: &str) -> Vec<(String, String, String)> {
-    let re = regex::Regex::new(r"pub const (\w+):\s*(\w+)\s*=\s*([^;]+);").unwrap();
-    re.captures_iter(content)
-        .map(|c| (c[1].to_string(), c[2].to_string(), c[3].trim().to_string()))
-        .collect()
-}
-
-fn extract_structs(content: &str) -> Vec<(String, Vec<(String, String)>)> {
-    let mut structs = Vec::new();
-    let struct_re = regex::Regex::new(
-        r#"#\[repr\(C\)\]\s*(?:#\[derive[^\]]*\]\s*)*pub struct (\w+)\s*\{([^}]*)\}"#,
-    )
-    .unwrap();
-    let field_re = regex::Regex::new(r"pub (\w+):\s*([^,\n]+)").unwrap();
-
-    for cap in struct_re.captures_iter(content) {
-        let name = cap[1].to_string();
-        let body = &cap[2];
-        let mut fields = Vec::new();
-        for f in field_re.captures_iter(body) {
-            let fname = f[1].to_string();
-            let ftype = f[2].trim().trim_end_matches(',').to_string();
-            fields.push((fname, ftype));
-        }
-        if !fields.is_empty() {
-            structs.push((name, fields));
-        }
-    }
-    structs
-}
-
-fn extract_functions(content: &str) -> Vec<Function> {
-    let mut out = Vec::new();
-    let mut seen = HashSet::new();
-
-    let fn_re =
-        regex::Regex::new(r#"pub unsafe (?:extern "C" )?fn (\w+)\s*\(([^)]*)\)\s*->\s*(\w+)"#)
-            .unwrap();
-
-    for cap in fn_re.captures_iter(content) {
-        let name = cap[1].to_string();
-        if seen.contains(&name) {
-            continue;
-        }
-        seen.insert(name.clone());
-
-        // Only real NT syscalls — skip runtime helpers (sw3_*, etc.).
-        if !name.starts_with("nt_") {
-            continue;
-        }
-
-        let params = parse_params(&cap[2]);
-        let return_type = cap[3].to_string();
-        let pascal = to_pascal_case(&name);
-        let zw_name = format!("Zw{}", &pascal[2..]);
-        let zw_hash = hash_syscall(&zw_name);
-
-        out.push(Function {
-            name,
-            pascal,
-            params,
-            return_type,
-            zw_hash,
-        });
-    }
-    out
-}
-
-fn parse_params(s: &str) -> Vec<Param> {
-    let mut out = Vec::new();
-    if s.trim().is_empty() {
-        return out;
-    }
-
-    let mut current = String::new();
-    let mut depth = 0i32;
-    for ch in s.chars() {
-        match ch {
-            '<' | '(' => {
-                depth += 1;
-                current.push(ch);
-            }
-            '>' | ')' => {
-                depth -= 1;
-                current.push(ch);
-            }
-            ',' if depth == 0 => {
-                if let Some(p) = parse_single(&current) {
-                    out.push(p);
-                }
-                current.clear();
-            }
-            _ => current.push(ch),
-        }
-    }
-    if let Some(p) = parse_single(&current) {
-        out.push(p);
-    }
-    out
-}
-
-fn parse_single(s: &str) -> Option<Param> {
-    let s = s.trim();
-    if s.is_empty() {
-        return None;
-    }
-    let (n, t) = s.split_once(':')?;
-    let name = n.trim();
-    let typ = t.trim();
-    if name.is_empty() || typ.is_empty() {
-        return None;
-    }
-    if name.starts_with('_') || typ.contains("enum ") || typ.contains("struct ") {
-        return None;
-    }
-    Some(Param {
-        name: sanitize_param_name(name),
-        typ: typ.to_string(),
-    })
+pub fn parse(content: &str) -> Result<Parsed, String> {
+    let parsed = ast::parse(content)?;
+    validate::validate(&parsed)?;
+    Ok(parsed)
 }
 
 fn sanitize_param_name(name: &str) -> String {

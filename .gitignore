@@ -2,8 +2,7 @@
 target/
 target_smol/
 
-# Cargo lock for libraries
-Cargo.lock
+# Workspace includes a generator binary: keep its lockfile reproducible.
 
 # IDE
 .idea/

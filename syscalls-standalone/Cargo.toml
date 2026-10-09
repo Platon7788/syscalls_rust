@@ -12,4 +12,6 @@ name = "syscalls-standalone"
 path = "src/main.rs"
 
 [dependencies]
-regex = "1.13.1"
+syn = { version = "2.0.119", features = ["full"] }
+quote = "1"
+proc-macro2 = { version = "1", features = ["span-locations"] }
