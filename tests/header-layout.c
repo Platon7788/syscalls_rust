@@ -88,3 +88,33 @@ CHECK_LAYOUT(RegionSize);
 CHECK_LAYOUT(State);
 CHECK_LAYOUT(Protect);
 CHECK_LAYOUT(Type);
+
+/* PROCESS_BASIC_INFORMATION: winternl.h redacts most fields as Reserved*, so
+   we check overall size/alignment plus the two public offsets. The private
+   X_ fields (ExitStatus, AffinityMask, BasePriority, InheritedFrom...) fall
+   inside Reserved1 / Reserved2[2] / Reserved3 slots that are the right size
+   per ABI, which `tests/layout_contract.rs` pins at the Rust side. */
+SDK_TYPE(PROCESS_BASIC_INFORMATION);
+SDK_FIELD(PROCESS_BASIC_INFORMATION, PebBaseAddress);
+SDK_FIELD(PROCESS_BASIC_INFORMATION, UniqueProcessId);
+
+/* RTL_USER_PROCESS_PARAMETERS: winternl.h ships a prefix-truncated view
+   (Reserved1[16] + Reserved2[10 PVOID] + ImagePathName + CommandLine).
+   X_RTL_USER_PROCESS_PARAMETERS is the full PHNT layout, so we only pin
+   the two documented UNICODE_STRING offsets. The SDK struct is a strict
+   prefix of ours — a stricter equality would require PHNT headers. */
+ASSERT(offsetof(X_RTL_USER_PROCESS_PARAMETERS, ImagePathName) ==
+               offsetof(RTL_USER_PROCESS_PARAMETERS, ImagePathName),
+       "RTL_USER_PROCESS_PARAMETERS.ImagePathName SDK offset");
+ASSERT(offsetof(X_RTL_USER_PROCESS_PARAMETERS, CommandLine) ==
+               offsetof(RTL_USER_PROCESS_PARAMETERS, CommandLine),
+       "RTL_USER_PROCESS_PARAMETERS.CommandLine SDK offset");
+ASSERT(sizeof(X_RTL_USER_PROCESS_PARAMETERS) >=
+               sizeof(RTL_USER_PROCESS_PARAMETERS),
+       "RTL_USER_PROCESS_PARAMETERS covers SDK prefix");
+
+/* LARGE_INTEGER_UNION mirrors the Windows LARGE_INTEGER union. */
+ASSERT(sizeof(X_LARGE_INTEGER_UNION) == sizeof(LARGE_INTEGER),
+       "LARGE_INTEGER_UNION size");
+ASSERT(ALIGNOF(X_LARGE_INTEGER_UNION) == ALIGNOF(LARGE_INTEGER),
+       "LARGE_INTEGER_UNION alignment");

@@ -480,19 +480,19 @@ pub struct CLIENT_ID {
 }
 pub type PCLIENT_ID = *mut CLIENT_ID;
 
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct LARGE_INTEGER_PARTS {
+    pub LowPart: ULONG,
+    pub HighPart: LONG,
+}
+
 /// Large integer union
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub union LARGE_INTEGER_UNION {
     pub QuadPart: i64,
     pub u: LARGE_INTEGER_PARTS,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct LARGE_INTEGER_PARTS {
-    pub LowPart: ULONG,
-    pub HighPart: LONG,
 }
 
 // =============================================================================
@@ -603,12 +603,152 @@ pub struct PS_ATTRIBUTE_LIST {
 }
 pub type PPS_ATTRIBUTE_LIST = *mut PS_ATTRIBUTE_LIST;
 
+// Native process-creation ABI (PHNT ntpsapi.h / ntrtl.h). State and flag
+// fields stay integer-backed so future kernel values remain representable.
+pub const PS_CREATE_INITIAL_STATE: u32 = 0;
+pub const PS_CREATE_FAIL_ON_FILE_OPEN: u32 = 1;
+pub const PS_CREATE_FAIL_ON_SECTION_CREATE: u32 = 2;
+pub const PS_CREATE_FAIL_EXE_FORMAT: u32 = 3;
+pub const PS_CREATE_FAIL_MACHINE_MISMATCH: u32 = 4;
+pub const PS_CREATE_FAIL_EXE_NAME: u32 = 5;
+pub const PS_CREATE_SUCCESS: u32 = 6;
+pub const PS_ATTRIBUTE_IMAGE_NAME: ULONG_PTR = 0x20005;
+pub const PS_ATTRIBUTE_CLIENT_ID: ULONG_PTR = 0x10003;
+pub const PS_ATTRIBUTE_HANDLE_LIST: ULONG_PTR = 0x2000b;
+pub const PROCESS_CREATE_FLAGS_INHERIT_HANDLES: ULONG = 0x4;
+pub const THREAD_CREATE_FLAGS_CREATE_SUSPENDED: ULONG = 0x1;
+pub const RTL_USER_PROC_PARAMS_NORMALIZED: ULONG = 0x1;
+pub const PROCESS_BASIC_INFORMATION_CLASS: ULONG = 0;
+pub const PROCESS_TIMES_INFORMATION_CLASS: ULONG = 4;
+pub const PROCESS_WOW64_INFORMATION_CLASS: ULONG = 26;
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct PS_CREATE_INIT_STATE {
+    pub InitFlags: ULONG,
+    pub AdditionalFileAccess: ACCESS_MASK,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct PS_CREATE_SUCCESS_STATE {
+    pub OutputFlags: ULONG,
+    pub FileHandle: HANDLE,
+    pub SectionHandle: HANDLE,
+    pub UserProcessParametersNative: ULONGLONG,
+    pub UserProcessParametersWow64: ULONG,
+    pub CurrentParameterFlags: ULONG,
+    pub PebAddressNative: ULONGLONG,
+    pub PebAddressWow64: ULONG,
+    pub ManifestAddress: ULONGLONG,
+    pub ManifestSize: ULONG,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union PS_CREATE_INFO_STATE {
+    pub InitState: PS_CREATE_INIT_STATE,
+    pub FailSectionFileHandle: HANDLE,
+    pub ExeFormatDllCharacteristics: USHORT,
+    pub ExeNameIFEOKey: HANDLE,
+    pub SuccessState: PS_CREATE_SUCCESS_STATE,
+}
+
 #[repr(C)]
 pub struct PS_CREATE_INFO {
     pub Size: SIZE_T,
     pub State: u32,
+    pub Data: PS_CREATE_INFO_STATE,
 }
 pub type PPS_CREATE_INFO = *mut PS_CREATE_INFO;
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct PROCESS_BASIC_INFORMATION {
+    pub ExitStatus: NTSTATUS,
+    pub PebBaseAddress: PVOID,
+    pub AffinityMask: ULONG_PTR,
+    pub BasePriority: LONG,
+    pub UniqueProcessId: ULONG_PTR,
+    pub InheritedFromUniqueProcessId: ULONG_PTR,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct KERNEL_USER_TIMES {
+    pub CreateTime: LARGE_INTEGER,
+    pub ExitTime: LARGE_INTEGER,
+    pub KernelTime: LARGE_INTEGER,
+    pub UserTime: LARGE_INTEGER,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ANSI_STRING {
+    pub Length: USHORT,
+    pub MaximumLength: USHORT,
+    pub Buffer: *mut u8,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct CURDIR {
+    pub DosPath: UNICODE_STRING,
+    pub Handle: HANDLE,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct RTL_DRIVE_LETTER_CURDIR {
+    pub Flags: USHORT,
+    pub Length: USHORT,
+    pub TimeStamp: ULONG,
+    pub DosPath: ANSI_STRING,
+}
+
+#[repr(C)]
+pub struct RTL_USER_PROCESS_PARAMETERS {
+    pub MaximumLength: ULONG,
+    pub Length: ULONG,
+    pub Flags: ULONG,
+    pub DebugFlags: ULONG,
+    pub ConsoleHandle: HANDLE,
+    pub ConsoleFlags: ULONG,
+    pub StandardInput: HANDLE,
+    pub StandardOutput: HANDLE,
+    pub StandardError: HANDLE,
+    pub CurrentDirectory: CURDIR,
+    pub DllPath: UNICODE_STRING,
+    pub ImagePathName: UNICODE_STRING,
+    pub CommandLine: UNICODE_STRING,
+    pub Environment: PVOID,
+    pub StartingX: ULONG,
+    pub StartingY: ULONG,
+    pub CountX: ULONG,
+    pub CountY: ULONG,
+    pub CountCharsX: ULONG,
+    pub CountCharsY: ULONG,
+    pub FillAttribute: ULONG,
+    pub WindowFlags: ULONG,
+    pub ShowWindowFlags: ULONG,
+    pub WindowTitle: UNICODE_STRING,
+    pub DesktopInfo: UNICODE_STRING,
+    pub ShellInfo: UNICODE_STRING,
+    pub RuntimeData: UNICODE_STRING,
+    pub CurrentDirectories: [RTL_DRIVE_LETTER_CURDIR; 32],
+    pub EnvironmentSize: ULONG_PTR,
+    pub EnvironmentVersion: ULONG_PTR,
+    pub PackageDependencyData: PVOID,
+    pub ProcessGroupId: ULONG,
+    pub LoaderThreads: ULONG,
+    pub RedirectionDllName: UNICODE_STRING,
+    pub HeapPartitionName: UNICODE_STRING,
+    pub DefaultThreadpoolCpuSetMasks: *mut ULONGLONG,
+    pub DefaultThreadpoolCpuSetMaskCount: ULONG,
+    pub DefaultThreadpoolThreadMaximum: ULONG,
+    pub HeapMemoryTypeMask: ULONG,
+    pub AttributeList: PVOID,
+}
 
 // Context - opaque pointer (full CONTEXT is architecture-specific and huge)
 pub type PCONTEXT = PVOID;
@@ -773,7 +913,7 @@ pub type PTOKEN_PRIMARY_GROUP = PVOID;
 pub type PTOKEN_DEFAULT_DACL = PVOID;
 pub type PTOKEN_SOURCE = PVOID;
 pub type PPROCESS_ATTRIBUTE_LIST = PVOID;
-pub type PRTL_USER_PROCESS_PARAMETERS = PVOID;
+pub type PRTL_USER_PROCESS_PARAMETERS = *mut RTL_USER_PROCESS_PARAMETERS;
 pub type PPROCESS_CREATE_INFO = PVOID;
 pub type PPROCESS_ACCESS_TOKEN = PVOID;
 pub type PSECTION_IMAGE_INFORMATION = PVOID;

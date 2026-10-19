@@ -13,6 +13,7 @@ pub(super) fn parse(content: &str) -> Result<Parsed, String> {
         notices: Vec::new(),
         types: vec![],
         structs: vec![],
+        unions: HashSet::new(),
         constants: vec![],
         functions: vec![],
     };
@@ -27,6 +28,23 @@ pub(super) fn parse(content: &str) -> Result<Parsed, String> {
     type Signature = (Vec<String>, String);
     let mut functions: HashMap<String, (Option<&'static str>, Signature)> = HashMap::new();
     for item in file.items {
+        // Aggregates share field validation and declaration-order checks.
+        // Preserve the tag kind separately for C/C++ forward declarations.
+        let item = match item {
+            Item::Union(u) if public(&u.vis) => {
+                result.unions.insert(u.ident.to_string());
+                Item::Struct(syn::ItemStruct {
+                    attrs: u.attrs,
+                    vis: u.vis,
+                    struct_token: Default::default(),
+                    ident: u.ident,
+                    generics: u.generics,
+                    fields: Fields::Named(u.fields),
+                    semi_token: None,
+                })
+            }
+            item => item,
+        };
         let mut error_span = item.span();
         let outcome = (|| -> Result<(), String> {
             match item {

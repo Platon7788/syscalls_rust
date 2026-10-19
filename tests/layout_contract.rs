@@ -18,6 +18,7 @@ fn export_layout_contract() {
     layout!(IO_STATUS_BLOCK; Status, Information);
     layout!(CLIENT_ID; UniqueProcess, UniqueThread);
     layout!(LARGE_INTEGER_PARTS; LowPart, HighPart);
+    layout!(LARGE_INTEGER_UNION; QuadPart, u);
     layout!(GENERIC_MAPPING; GenericRead, GenericWrite, GenericExecute, GenericAll);
     layout!(LUID; LowPart, HighPart);
     layout!(LUID_AND_ATTRIBUTES; Luid, Attributes);
@@ -29,7 +30,16 @@ fn export_layout_contract() {
     layout!(INITIAL_TEB; OldStackBase, OldStackLimit, StackBase, StackLimit, StackAllocationBase);
     layout!(PS_ATTRIBUTE; Attribute, Size, Value, ReturnLength);
     layout!(PS_ATTRIBUTE_LIST; TotalLength, Attributes);
-    layout!(PS_CREATE_INFO; Size, State);
+    layout!(PS_CREATE_INIT_STATE; InitFlags, AdditionalFileAccess);
+    layout!(PS_CREATE_SUCCESS_STATE; OutputFlags, FileHandle, SectionHandle, UserProcessParametersNative, UserProcessParametersWow64, CurrentParameterFlags, PebAddressNative, PebAddressWow64, ManifestAddress, ManifestSize);
+    layout!(PS_CREATE_INFO_STATE; InitState, FailSectionFileHandle, ExeFormatDllCharacteristics, ExeNameIFEOKey, SuccessState);
+    layout!(PS_CREATE_INFO; Size, State, Data);
+    layout!(PROCESS_BASIC_INFORMATION; ExitStatus, PebBaseAddress, AffinityMask, BasePriority, UniqueProcessId, InheritedFromUniqueProcessId);
+    layout!(KERNEL_USER_TIMES; CreateTime, ExitTime, KernelTime, UserTime);
+    layout!(ANSI_STRING; Length, MaximumLength, Buffer);
+    layout!(CURDIR; DosPath, Handle);
+    layout!(RTL_DRIVE_LETTER_CURDIR; Flags, Length, TimeStamp, DosPath);
+    layout!(RTL_USER_PROCESS_PARAMETERS; MaximumLength, Length, Flags, DebugFlags, ConsoleHandle, ConsoleFlags, StandardInput, StandardOutput, StandardError, CurrentDirectory, DllPath, ImagePathName, CommandLine, Environment, StartingX, StartingY, CountX, CountY, CountCharsX, CountCharsY, FillAttribute, WindowFlags, ShowWindowFlags, WindowTitle, DesktopInfo, ShellInfo, RuntimeData, CurrentDirectories, EnvironmentSize, EnvironmentVersion, PackageDependencyData, ProcessGroupId, LoaderThreads, RedirectionDllName, HeapPartitionName, DefaultThreadpoolCpuSetMasks, DefaultThreadpoolCpuSetMaskCount, DefaultThreadpoolThreadMaximum, HeapMemoryTypeMask, AttributeList);
     layout!(FILE_BASIC_INFORMATION; CreationTime, LastAccessTime, LastWriteTime, ChangeTime, FileAttributes);
     layout!(FILE_NETWORK_OPEN_INFORMATION; CreationTime, LastAccessTime, LastWriteTime, ChangeTime, AllocationSize, EndOfFile, FileAttributes);
     layout!(MEMORY_BASIC_INFORMATION; BaseAddress, AllocationBase, AllocationProtect, RegionSize, State, Protect, Type);

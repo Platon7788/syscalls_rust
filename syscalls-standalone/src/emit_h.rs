@@ -71,7 +71,12 @@ extern "C" {
 fn forward_struct_decls(h: &mut String, p: &Parsed) {
     h.push_str("/* ==================== Forward struct decls ==================== */\n\n");
     for (name, _) in &p.structs {
-        writeln!(h, "typedef struct _X_{n} X_{n};", n = name).unwrap();
+        let kind = if p.unions.contains(name) {
+            "union"
+        } else {
+            "struct"
+        };
+        writeln!(h, "typedef {kind} _X_{n} X_{n};", n = name).unwrap();
     }
     h.push('\n');
 }
@@ -88,7 +93,12 @@ fn type_aliases(h: &mut String, p: &Parsed) {
 fn struct_bodies(h: &mut String, p: &Parsed) {
     h.push_str("/* ==================== Struct definitions ==================== */\n\n");
     for (name, fields) in &p.structs {
-        writeln!(h, "struct _X_{} {{", name).unwrap();
+        let kind = if p.unions.contains(name) {
+            "union"
+        } else {
+            "struct"
+        };
+        writeln!(h, "{kind} _X_{} {{", name).unwrap();
         if fields.is_empty() {
             writeln!(h, "    uint32_t X_reserved;").unwrap();
         } else {

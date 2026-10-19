@@ -67,6 +67,7 @@ pub struct Parsed {
     pub notices: Vec<String>,
     pub types: Vec<(String, String)>,
     pub structs: Vec<(String, Vec<Field>)>,
+    pub unions: std::collections::HashSet<String>,
     pub constants: Vec<(String, String, String)>,
     pub functions: Vec<Function>,
 }

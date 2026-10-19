@@ -1,5 +1,11 @@
 # Журнал прогресса syscalls-rust
 
+## 2026-10-09 — регенерация bundle в xhook
+
+- `cargo run -p syscalls-standalone -- --out D:\GitHub\VsProjects\xhook\syscalls`
+- Разобрано: 127 types, 26 structs, 189 constants, 513 syscall fns.
+- Перезаписаны `syscalls.h`, `syscalls.c`, `syscallsstubs.x64.asm`, `syscallsstubs.x86.c`, `syscalls.props`, `README.md`. `syscalls.cmake` генератор не трогает, файл на месте.
+
 ## 2026-10-09 — локальное ревью перед публикацией
 
 - По запросу владельца GitHub Actions workflow удалён до публикации. Все проверки запускаются локально через `tests/verify-quality.ps1 -Offline`: fmt, Clippy, workspace tests, воспроизводимость шести файлов и C11/C++20 × x86/x64.

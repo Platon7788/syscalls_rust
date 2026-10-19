@@ -477,9 +477,9 @@ mod tests {
 
     #[test]
     fn unexpanded_and_unsupported_exports_are_reported() {
-        let parsed = parse("pub mod other; pub use other::*; pub enum Choice { A } pub union Bits { value: u32 } make_items!();").unwrap();
-        assert_eq!(parsed.notices.len(), 5);
-        assert!(parsed.notices.iter().any(|n| n.contains("union Bits")));
+        let parsed = parse("pub mod other; pub use other::*; pub enum Choice { A } #[repr(C)] pub union Bits { pub value: u32 } make_items!();").unwrap();
+        assert_eq!(parsed.notices.len(), 4);
+        assert!(parsed.unions.contains("Bits"));
         assert!(parsed.notices.iter().all(|n| n.starts_with("1:")));
     }
 }
