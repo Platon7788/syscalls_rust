@@ -2,7 +2,7 @@
 name = "syscalls-standalone"
 version = "0.3.0"
 edition = "2024"
-rust-version = "1.99"
+rust-version = "1.100"
 description = "Emit self-contained C/H/MASM syscall drop-in bundle from lib.rs"
 license = "MIT"
 default-run = "syscalls-standalone"
@@ -12,6 +12,6 @@ name = "syscalls-standalone"
 path = "src/main.rs"
 
 [dependencies]
-syn = { version = "2.0.119", features = ["full"] }
-quote = "1"
-proc-macro2 = { version = "1", features = ["span-locations"] }
+syn = { version = "3.0.10", features = ["full"] }
+quote = "1.0.47"
+proc-macro2 = { version = "1.0.107", features = ["span-locations"] }

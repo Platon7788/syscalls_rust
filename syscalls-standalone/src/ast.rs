@@ -124,7 +124,7 @@ pub(super) fn parse(content: &str) -> Result<Parsed, String> {
                 }
                 Item::Fn(item)
                     if public(&item.vis)
-                        && item.sig.unsafety.is_some()
+                        && matches!(item.sig.safety, syn::Safety::Unsafe(_))
                         && item.sig.ident.to_string().starts_with("nt_") =>
                 {
                     let name = item.sig.ident.to_string();
@@ -327,7 +327,7 @@ fn type_text(ty: &Type) -> Result<String, String> {
     match ty {
         Type::Ptr(ptr) => Ok(format!(
             "*{} {}",
-            if ptr.mutability.is_some() {
+            if matches!(ptr.mutability, syn::PointerMutability::Mut(_)) {
                 "mut"
             } else {
                 "const"
@@ -354,7 +354,7 @@ fn type_text(ty: &Type) -> Result<String, String> {
                     && args.args.len() == 1
                     && matches!(
                         args.args.first(),
-                        Some(syn::GenericArgument::Type(Type::BareFn(_)))
+                        Some(syn::GenericArgument::Type(Type::FnPtr(_)))
                     )
                 {
                     return Ok(ty

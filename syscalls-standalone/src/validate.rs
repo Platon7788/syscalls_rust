@@ -254,7 +254,7 @@ fn type_references(ty: &Type, refs: &mut Vec<String>) {
                 type_references(element, refs);
             }
         }
-        Type::BareFn(f) => {
+        Type::FnPtr(f) => {
             for arg in &f.inputs {
                 type_references(&arg.ty, refs);
             }
